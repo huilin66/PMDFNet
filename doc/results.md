@@ -17,6 +17,7 @@
 - Add Fusion 的 L1 为 `0.8594`，Concat Fusion 的 C2 为 `0.8462`；在当前训练协议下 Add 表现更好。
 - CE-only（L1）高于 CE + Dice（L3，`0.8534`）和 Dice-only（L2，`0.8323`）。这只是同一架构、同一数据划分下的描述性结果。
 - E5 受控扰动、图像级 bootstrap/配对检验以及固定规则的 Test 定性/FP-FN 案例分析已在 A100 上完成；这些结果支持当前 M4 vs. L1/M5 的配对比较，但不替代跨 seed 的训练随机性汇总，也未对全部消融组合做成对检验。
+- CAM 与 GT/Pred 原型 t-SNE 解释性分析已在 A100 上完成；这是定性机制分析，不改变主表指标，也不作为显著性或因果证据。
 
 ## 2. 数据、映射与评价边界
 
@@ -203,8 +204,11 @@ M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中�
 | 图像级 bootstrap 与配对检验 | 已完成 | 按相同 seed、条件和 Test 图像配对，执行 10,000 次 bootstrap 与 10,000 次 sign-flip 检验；详细结果见 [`robustness_paired_stats.json`](../outputs_experiments/robustness/analysis/robustness_paired_stats.json) / [`robustness_paired_stats.csv`](../outputs_experiments/robustness/analysis/robustness_paired_stats.csv)。 |
 | FP/FN 与失败案例分析 | 已完成 | 固定 seed 41 的 clean Test，按双方优劣、双方困难和最大差异规则选择 14 张图；选择清单见 [`failure_cases.json`](../outputs_experiments/robustness/analysis/failure_cases.json)。 |
 | Test 定性可视化 | 已完成 | 每张图包含 RGB、GT、M4、L1/M5 预测及两者 FP/FN 图；PNG 和渲染清单见 [`qualitative_cases.json`](../outputs_experiments/robustness/qualitative/qualitative_cases.json) 及同目录文件。 |
+| CAM 分析 | 已完成 | A100 上使用 M4 与 L1/M5、seed 41、公开 Test 固定抽取的 12 张图，前景类 `class_id=1`、`gt_mask` 目标和自动 decoder feature layer；逐模型 CAM、RGB/GT/Pred/FP-FN 与 metadata 见 [`M4_s41`](../outputs_experiments/interpretability/cam/M4_s41/) / [`L1_s41`](../outputs_experiments/interpretability/cam/L1_s41/)。 |
+| CAM 对比图 | 已完成 | 将两模型同一批样本排版为 `RGB | GT | Pred | CAM | FP/FN` 对比图；见 [`cam_comparison_s41.png`](../outputs_experiments/interpretability/cam/cam_comparison_s41.png) 和 [`cam_comparison_s41_manifest.json`](../outputs_experiments/interpretability/cam/cam_comparison_s41_manifest.json)。 |
+| GT/Pred 特征原型 t-SNE | 已完成 | 共 448 个区域原型；M4/L1 decoder 特征均为 256 维，经各模型 PCA 对齐到 32 维后联合 t-SNE；图和坐标见 [`tsne/M4,L1_s41`](../outputs_experiments/interpretability/tsne/M4,L1_s41/)，包括 `tsne_all.png`、`tsne_gt.png`、`tsne_pred.png`、`prototypes.csv` 和 `tsne_coordinates.csv`。 |
 
-执行入口：[`run_robustness_eval.sh`](../scripts/run_robustness_eval.sh) 和 [`run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh)。固定协议：[`mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)。
+执行入口：[`run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)、[`run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh) 和 [`run_interpretability.sh`](../scripts/run_interpretability.sh)。固定扰动协议：[`mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；解释性分析规则见实验计划 E7.1。
 
 ## 10. 每个 seed 的 Test mIoU
 
@@ -282,8 +286,9 @@ outputs_experiments/pmdfnet_mmlsv2/
 - E5 鲁棒性：[`scripts/run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)，协议见 [`configs/mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；
 - 配对统计和失败案例：[`scripts/run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh)，实现见 [`tools/evaluation/analyze_robustness.py`](../tools/evaluation/analyze_robustness.py)；
 - 定性图：[`tools/evaluation/render_qualitative_cases.py`](../tools/evaluation/render_qualitative_cases.py)。
+- CAM 与原型 t-SNE：[`scripts/run_interpretability.sh`](../scripts/run_interpretability.sh)，实现见 [`tools/evaluation/cam_analysis.py`](../tools/evaluation/cam_analysis.py)、[`tools/evaluation/tsne_prototype_analysis.py`](../tools/evaluation/tsne_prototype_analysis.py) 和 [`tools/evaluation/make_cam_comparison_figure.py`](../tools/evaluation/make_cam_comparison_figure.py)；结果见 `../outputs_experiments/interpretability/`。
 
-历史 57 个训练/Test run 的记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`，因此这些结果仍应视为 dirty 工作树快照。本文新增的复杂度、E5 鲁棒性、配对统计和定性渲染是在 A100 的当前同步 commit `f5c3374a00985749d751e17bef4120a2cc43578b` 上执行；新增分析脚本尚未提交。投稿或最终归档前仍应在 clean commit 下重新冻结协议并记录完整 hash。
+历史 57 个训练/Test run 的记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`，因此这些结果仍应视为 dirty 工作树快照。复杂度、E5 鲁棒性、配对统计和定性渲染是在 A100 的同步 commit `f5c3374a00985749d751e17bef4120a2cc43578b` 上执行；本次 CAM/t-SNE 分析是在 clean commit `162d9a23d4031308057ed4654a298154ec08966e` 上执行。投稿或最终归档前仍应在 clean commit 下重新冻结协议并记录完整 hash。
 
 M11 的配置明确为 `pretrain=false`，但历史本轮结果文件没有单独记录 `mamba_ssm` selective-scan 与 fallback 实现路径。新训练的 `runtime.json`、复杂度结果和鲁棒性结果会记录该字段；历史 57 个 run 仍不能事后假定其后端。
 
