@@ -2,7 +2,7 @@
 
 > 对应实验计划：[`PMDFNet_MMLSv2_Experiment_Plan_v2.md`](PMDFNet_MMLSv2_Experiment_Plan_v2.md)
 > 协议：`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`
-> 更新时间：2026-10-17
+> 更新时间：2026-10-18
 > 结果来源：A100-1（`cuda:0`），远程目录 `/data/huilin/projects/PMDFNet/outputs_experiments/pmdfnet_mmlsv2/`
 
 本文档记录当前 protocol v5 的正式实验结果。表中 Test 指 converted MMLSv2 的带公开标签 `test` split，不是原比赛的隐藏 Test2 榜单。
@@ -16,7 +16,7 @@
 - 原始通道分组 L1 为 `0.8594`，B2 为 `0.8520`，B3 为 `0.8460`；当前结果支持“本轮原始分组表现最好”的描述，但尚未完成显著性检验。
 - Add Fusion 的 L1 为 `0.8594`，Concat Fusion 的 C2 为 `0.8462`；在当前训练协议下 Add 表现更好。
 - CE-only（L1）高于 CE + Dice（L3，`0.8534`）和 Dice-only（L2，`0.8323`）。这只是同一架构、同一数据划分下的描述性结果。
-- 当前没有完成图像级 bootstrap/配对检验、复杂度正式测量、定性可视化和 E5 受控扰动实验，因此不把上述差异写成统计显著或鲁棒性结论。
+- 当前尚未在 A100 执行图像级 bootstrap/配对检验、复杂度正式测量、定性可视化和 E5 受控扰动实验，因此不把上述差异写成统计显著或鲁棒性结论。对应代码已经补充：`scripts/run_complexity_eval.sh` 和 `scripts/run_robustness_eval.sh`；本文件在实际输出生成前不填入推测数值。
 
 ## 2. 数据、映射与评价边界
 
@@ -243,18 +243,24 @@ outputs_experiments/pmdfnet_mmlsv2/
 - 评估脚本：[`scripts/run_test_eval.sh`](../scripts/run_test_eval.sh)；
 - 测试评估实现：[`tools/evaluation/evaluate_test_metrics.py`](../tools/evaluation/evaluate_test_metrics.py)。
 
+新增但尚未执行的补充评价入口：
+
+- 复杂度：[`scripts/run_complexity_eval.sh`](../scripts/run_complexity_eval.sh)，实现见 [`tools/evaluation/measure_model_complexity.py`](../tools/evaluation/measure_model_complexity.py)；
+- E5 鲁棒性：[`scripts/run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)，协议见 [`configs/mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；输出逐图像 TP/FP/FN/TN 的 JSONL，可作为配对 bootstrap、统计检验和失败案例分析输入。
+
 所有远程运行记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`。因此这些结果应视为当前工作树快照；投稿或最终归档前应在 clean commit 下重新冻结协议并记录完整 hash。
 
-M11 的配置明确为 `pretrain=false`，但本轮结果文件没有单独记录 `mamba_ssm` selective-scan 与 fallback 实现路径，后续需要补充该运行环境信息。
+M11 的配置明确为 `pretrain=false`，但历史本轮结果文件没有单独记录 `mamba_ssm` selective-scan 与 fallback 实现路径。新训练的 `runtime.json`、复杂度结果和鲁棒性结果会记录该字段；历史 57 个 run 仍不能事后假定其后端。
 
 ## 11. 尚未完成的工作
 
-- E0 的完整数据审计：场景级独立性、相邻切片泄漏、统一 manifest、hash 和通道统计；
-- Params、GFLOPs、FPS/latency 和峰值显存的统一正式测量；
+- 公开数据集的来源、引用、通道和映射规则需继续随论文材料归档；本轮不把数据泄漏、场景独立性和完整数据审计作为阻塞项；
+- 在 A100 执行 `scripts/run_complexity_eval.sh`，生成 Params、GFLOPs、FPS/latency 和峰值显存的统一正式测量；
 - 图像级 bootstrap 或配对统计检验；
-- E5 受控扰动、模态缺失和鲁棒性曲线；
+- 在 A100 执行 `scripts/run_robustness_eval.sh`，生成 E5 受控扰动、模态缺失和鲁棒性曲线的原始指标；
 - 固定规则下的 Test 定性结果、FP/FN 分析和失败案例；
-- M11 实际后端路径、M6 非确定性影响的补充记录；
+- 历史 57 个 run 的 M11 实际后端路径、M6 非确定性影响的补充记录；新训练会写入 `runtime.json`，旧结果仍需按 dirty-snapshot 归档；
+- 在 clean commit 下重新冻结，或归档历史工作树的完整代码差异、未跟踪文件、环境信息和原始输出；
 - 官方隐藏 Test2 的提交或榜单结果。当前结果不能替代官方隐藏测试评价。
 
 在上述工作完成前，本文档支持的是“当前 protocol v5 下的 57-run 标准 Test 结果记录”，不是最终论文的完整 Results/Discussion 定稿。

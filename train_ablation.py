@@ -395,6 +395,39 @@ def set_seed(seed, deterministic=True):
     )
 
 
+def model_backend_metadata(cfg):
+    """Record backend choices that can change a model's implementation.
+
+    M3LSNet has two intentionally supported paths: the real mamba_ssm
+    selective scan and the built-in gated-convolution simulator.  The path is
+    runtime-dependent, so it belongs in the run artifact rather than only in
+    the static protocol JSON.
+    """
+    model_name = str(getattr(cfg, "model_name", "") or "").lower()
+    if not model_name.startswith("m3lsnet"):
+        return {"model_backend": "standard_pytorch_or_smp"}
+    try:
+        import networks.M3LSNet as m3lsnet_module
+
+        available = m3lsnet_module.selective_scan_fn is not None
+        return {
+            "model_backend": (
+                "mamba_ssm_selective_scan" if available else "gated_conv_simulator"
+            ),
+            "m3lsnet_backend": (
+                "mamba_ssm_selective_scan" if available else "gated_conv_simulator"
+            ),
+            "mamba_ssm_available": bool(available),
+        }
+    except Exception as exc:
+        return {
+            "model_backend": "backend_detection_failed",
+            "m3lsnet_backend": "backend_detection_failed",
+            "mamba_ssm_available": False,
+            "backend_error": str(exc),
+        }
+
+
 def seed_worker(worker_id):
     from reproducibility import seed_worker as shared_seed_worker
 
@@ -1184,8 +1217,10 @@ def run_experiment(cfg):
 
     with open(run_dir / "reproducibility.json", "w", encoding="utf-8") as f:
         json.dump(reproducibility, f, indent=2, ensure_ascii=False)
+    run_runtime = runtime_metadata()
+    run_runtime.update(model_backend_metadata(cfg))
     with open(run_dir / "runtime.json", "w", encoding="utf-8") as f:
-        json.dump(runtime_metadata(), f, indent=2, ensure_ascii=False)
+        json.dump(run_runtime, f, indent=2, ensure_ascii=False)
     logger = setup_logger(run_dir)
     logger.info("Run directory: %s", run_dir)
 
@@ -1230,6 +1265,9 @@ def run_experiment(cfg):
     logger.info("Using device: %s", device)
 
     model = build_model(cfg).to(device)
+    backend_metadata = model_backend_metadata(cfg)
+    if backend_metadata.get("m3lsnet_backend"):
+        logger.info("M3LSNet backend: %s", backend_metadata["m3lsnet_backend"])
     criterion = build_loss(cfg).to(device)
     optimizer = build_optimizer(cfg, model)
     scheduler = build_scheduler(cfg, optimizer)

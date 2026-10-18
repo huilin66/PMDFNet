@@ -26,6 +26,49 @@
 | `run_data_smoke.sh` | 只读数据冒烟：CLI 解析、data-root 解析、dataset 导入、读取一个样本（不建模型、不训练） |
 | `run_vram_smoke.sh` | 有界合成显存探针：逐个协议条目建模型并跑一个训练步，报告峰值显存（不读数据、不训练、不存 checkpoint） |
 | `run_test_eval.sh` | 冻结后的批量 Test 评价，写入各 run 的 `test_metrics.json` |
+| `run_complexity_eval.sh` | 对冻结的主基线统一测量 Params、GFLOPs、前向延迟/FPS 和峰值推理显存 |
+| `run_robustness_eval.sh` | 对 M4 与 L1/M5 执行 clean + 5 个固定 Test 扰动/模态缺失条件，并保存逐图像 TP/FP/FN/TN |
+
+## 复杂度与效率测量
+
+`run_complexity_eval.sh` 默认测量 M1–M4、M6–M11 和 L1（L1 是论文表中的 M5），使用各正式 run 的 `best.pth`，不重新训练。结果写入：
+
+```text
+outputs_experiments/complexity/complexity_results.json
+outputs_experiments/complexity/complexity_results.csv
+```
+
+指标定义固定为：Params 是模型全部参数量；GFLOPs 是 batch=1 的前向 FLOPs/1e9，由 `torch.profiler` 对支持 FLOP 公式的算子统计；FPS 是同步前向吞吐，延迟是 warmup 后的 forward-only 平均时间；显存是推理阶段峰值 allocated/reserved CUDA memory。自定义算子可能不被 profiler 统计，因此 GFLOPs 字段同时记录 `flops_backend`，不能把它误读成对所有算子的精确硬件指令数。
+
+示例：
+
+```bash
+DEVICE=cuda:0 COMPLEXITY_SEEDS=41 bash scripts/run_complexity_eval.sh
+```
+
+## 受控扰动与模态缺失
+
+固定协议在 `configs/mmlsv2_robustness_protocol.json`。它包含五个条件：DEM 偏置、DEM 高斯噪声、光学通道高斯噪声、物理模态缺失（Thermal/Slope/DEM）和光学模态缺失（Grayscale/R/G/B）；每个条件都带有预先声明的等级。所有扰动都在固定 MARS Test normalization 之后施加，模态缺失是归一化空间置零，即用该归一化空间的均值替代，不是修改原始 TIFF。每个模型/seed 还会评价 clean 作为配对参照。
+
+输出为：
+
+```text
+outputs_experiments/robustness/robustness_results.json
+outputs_experiments/robustness/robustness_results.csv
+outputs_experiments/robustness/robustness_per_image.jsonl
+```
+
+JSONL 保存每张 Test 图像的 TP、FP、FN、TN、mIoU、F1、预测前景面积和目标前景面积，因此可以直接做同一图像上的模型配对比较、bootstrap 和 FP/FN 失败案例筛选。
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls bash scripts/run_robustness_eval.sh
+```
+
+## M11 与可复现性记录
+
+M11 的 `mamba_ssm` selective-scan 和内置 `gated_conv_simulator` 是两个不同的后端，不能只记录“模型名为 M11”。复杂度和 robustness 输出会写入 `m3lsnet_backend` 与 `mamba_ssm_available`；正式训练/论文冻结时也应将这个字段连同环境信息归档。
+
+当前历史 57 个 run 的 `git_dirty=true` 表示运行开始时工作树有未提交改动：summary 中的 commit 只能恢复当时的 HEAD，不能恢复这些未提交差异。最终冻结建议先提交全部代码/协议并确认 `git status --short` 为空，再重新跑至少论文主表和关键消融；如果暂时不重跑，则必须归档 `git diff HEAD`、暂存区差异、未跟踪文件、协议 JSON、环境/依赖清单以及对应输出目录，并把结果标记为 dirty-snapshot。该过程不会自动删除或重置现有结果。
 
 ## 环境变量
 

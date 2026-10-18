@@ -11,7 +11,7 @@
 > **实验范围**：仅包含 MMLSv2；Landslide4Sense 另立计划。  
 > **状态**：以 `configs/mmlsv2_paper_protocol.json`（`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`）和当前 `scripts/`、`tools/evaluation/` 实现为执行蓝本；参数、样本映射与预训练来源须经 E0/实现核验后最终冻结。
 
-> **实现对齐说明（2026-10-17）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量，相关行为在第 1.2 节明确记录。
+> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 由 `scripts/run_robustness_eval.sh` 执行，但在实际运行前仍标记为待执行。
 
 ## 0. 研究问题、边界与待验证主张
 
@@ -52,9 +52,9 @@
 
 ---
 
-## E0. 数据版本与转换映射协议审计【正式训练前必须完成】
+## E0. 数据版本与转换映射记录【保留必要的来源与映射记录】
 
-**目的**：建立 `mmlsv2_mapped_mars_ls` 可追溯、可复现的来源链，排除输入顺序、数据版本和数据泄漏带来的伪提升。
+**目的**：建立 `mmlsv2_mapped_mars_ls` 可追溯、可复现的来源链，明确公开数据集来源、输入顺序和映射规则。由于本项目使用公开发布数据集，数据泄漏、场景独立性和完整数据审计不作为本轮实验的阻塞项；不在本计划中新增独立审计工程。
 
 ### E0.1 转换与通道审计
 
@@ -66,20 +66,14 @@
 - [ ] 所有归一化参数、裁剪阈值或校正系数必须明确来源；当前实现中的 Train/Test 统计量版本和生成方式必须随协议存档。
 - [ ] 校验每张图像与 GT 的配对、mask 值域（前景/背景/ignore）、空间尺寸、波段次序。
 
-### E0.2 划分与潜在泄漏审计
+### E0.2 数据泄漏与场景独立性
 
-- [ ] 固定文件级的 Train / Val / Test manifest（相对路径、样本 ID、原场景 ID/地理来源，若有）。
-- [ ] 检查跨划分重复文件/哈希一致样本，以及高度相似的相邻切片。
-- [ ] 如果有场景/区域元数据，检查是否 **scene-level disjoint**；否则明确“无法证实场景级独立”，不能默认宣称跨区域泛化。
-- [ ] 如果发现相邻切片跨集合，保留原划分用于对标时必须在论文中披露其影响；资源与元数据允许时，另设**预先冻结的场景独立划分**作为补充，不可依据 Test 结果重划分。
-- [ ] 把全部图像/标签 manifest、转换配置、评估协议与文件 SHA-256/hash 存档。
+本轮不实施单独的数据泄漏、scene-level 独立性和完整数据审计；公开数据集的官方来源、划分名称和许可/引用信息在论文中照常注明。不得把本轮结果外推为已证明跨场景泛化，也不把“公开”误写成“天然无泄漏”；但这些内容不阻塞当前训练、Test、复杂度或鲁棒性实验。
 
 ### E0.3 最低交付物
 
-- `dataset_manifest.csv`：文件名、split、scene/group、来源 ID、哈希、对应标注；
-- `channel_mapping.yaml`：各通道来源索引、单位与映射方法；
-- `dataset_audit.md`：数据分布与泄漏检查记录；
-- 固定 `train/val/test` 文件列表和完整转换脚本；当前映射程序生成的 `mapping_manifest.json` 与 `mapping_match_report.json` 作为映射核验附件保存，但不能替代上述完整数据审计交付物。
+- `channel_mapping.yaml`（如需论文补充材料）：各通道来源索引、单位与映射方法；
+- 固定 `train/val/test` 文件列表和完整转换脚本；当前映射程序生成的 `mapping_manifest.json` 与 `mapping_match_report.json` 作为映射核验附件保存。
 - 训练使用 `.env` 解析出的 `MMLSV2_DATA_ROOT`/`DATA_ROOT` 映射数据根目录；`MARS_LSC_ROOT` 仅作为映射比较参考，不能作为训练输入。参考数据版本必须与映射时使用的版本一致并记录。
 
 **论文写法**：*Converted MMLSv2*（转换后的 MMLSv2）。只有证据支持时才能说明“与竞赛数据基本一致”；不得据此称其为新数据集。
@@ -208,23 +202,23 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 ---
 
-## E5. 受控扰动及模态缺失【第二轮，建议】
+## E5. 受控扰动及模态缺失【第二轮，代码已补充，结果待执行】
 
-当前 `scripts/run_core.sh`、`run_ablations.sh` 和 `run_extended.sh` 的 57-run 正式矩阵不包含 E5；现有代码也没有将这些扰动自动接入训练/评估流水线。本节是后续独立扩展，若实施必须新增版本化的 `robustness_protocol.yaml`，不能将未执行的 E5 写成已完成结果。
+当前 `scripts/run_core.sh`、`run_ablations.sh` 和 `run_extended.sh` 的 57-run 正式矩阵不包含 E5；E5 是冻结 checkpoint 后的独立 Test 评价，不重新训练。代码入口为 `scripts/run_robustness_eval.sh`，固定协议为 `configs/mmlsv2_robustness_protocol.json`，使用 JSON 而不是旧计划中尚未落地的 YAML。未执行前不得把 E5 写成已完成结果。
 
 **先 Val 确定协议，再冻结，最后 Test 一次性评价。** 不从 Test 结果决定扰动类别、等级、随机种子、选择哪张图或采用哪个模型。
 
 | 扰动 | 对象 | 验证目标 |
 |---|---|---|
-| DEM offset / Gaussian noise | DEM | 地形测量偏移与噪声敏感性 |
-| 光照/对比度变化 | RGB + Grayscale | 光学信号变化敏感性 |
-| 分通道 Gaussian noise | 预先指定通道集合 | 传感器噪声敏感性 |
-| Optical modality missing | RGB + Grayscale | 光学模态依赖程度 |
+| DEM offset | DEM | 地形测量系统偏差敏感性 |
+| DEM Gaussian noise | DEM | 地形测量随机噪声敏感性 |
+| Optical Gaussian noise | Grayscale + RGB | 光学传感器噪声敏感性 |
+| Optical modality missing | Grayscale + RGB | 光学模态依赖程度 |
 | Physical modality missing | Thermal + Slope + DEM | 地形与热物理模态依赖程度 |
 
-统一比较 **M4（单流 Small） vs M5（双流 Small）**，保持 clean/perturbed 模型权重不变。建议在 Val 确定三个固定扰动强度（轻/中/重），并以归一化尺度或物理单位清楚定义；如将缺失通道替换为训练均值，标准化后等价于替换为 0。记录扰动 RNG seed，并在 Test 评估前保存 `robustness_protocol.yaml`。
+当前实现统一比较 **M4（单流 Small） vs M5（双流 Small，存储项 L1）**，保持 clean/perturbed 模型权重不变。协议预先固定三个 DEM/光学噪声等级（轻/中/重），并将偏置和噪声定义在 MARS Test normalization 之后；模态缺失将指定通道置为归一化空间的 0。记录协议中的 RNG seed，并保存 `robustness_protocol.json` 的 SHA-256。
 
-报告 clean 指标、各扰动等级指标、相对/绝对性能下降。此实验只能支持**受控扰动鲁棒性**，不能替代真实的跨区域测试。
+报告 clean 指标、各扰动等级指标、相对/绝对性能下降；同时输出每张 Test 图像的 TP/FP/FN/TN、mIoU 和 F1，为后续图像级 bootstrap、配对检验、定性可视化和失败案例筛选提供输入。此实验只能支持**受控扰动鲁棒性**，不能替代真实的跨区域测试。
 
 **交付**：`Table 7. Robustness under controlled perturbations`、`Figure 3. Robustness curves`。
 
@@ -248,7 +242,7 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 | FPS / latency | 同一 GPU、batch、精度、warm-up 和测速次数 |
 | Peak VRAM（可选） | 同一 batch size，报告测量范围 |
 
-当前仓库的 `run_vram_smoke.sh` 仅用于有界显存/建模探针，不等同于 Params、GFLOPs、FPS/latency 正式测量；正式复杂度表需要单独执行并保存测量脚本、硬件、精度、warm-up 和计时配置。主表默认不含 TTA；如另作 TTA，单独报告预测质量和额外耗时。不同分辨率/硬件的速度不能直接比较。
+当前仓库的 `run_vram_smoke.sh` 仍仅用于有界显存/建模探针；正式统一测量已补充到 `tools/evaluation/measure_model_complexity.py`，入口为 `scripts/run_complexity_eval.sh`。它读取冻结 run 的 `best.pth`，记录硬件、batch、精度、warm-up、计时配置及 M11 后端；结果写入 `outputs_experiments/complexity/complexity_results.{json,csv}`。主表默认不含 TTA；如另作 TTA，单独报告预测质量和额外耗时。不同分辨率/硬件的速度不能直接比较。
 
 **交付**：`Table 6. Model complexity and inference speed`、`Supplementary Table S1. Multi-seed results`。
 
@@ -261,6 +255,8 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 - 推荐对每张例图展示：`RGB | GT | Single-stream Small | PMDFNet-Small | FP/FN error map`。
 - 分析类型包括：明显滑坡主体、易误判背景、边界复杂、漏检、误检、两种模型都失败的情形。
 - 建议使用测试集的总体 FP/FN 统计或按图像分布分位数支撑定性讨论，不应从几个案例推导总体性能。
+
+这里的“图像级 bootstrap 或配对统计检验”不是只挑几张图展示，而是对同一 Test 图像在不同模型下的逐图像指标/误差做成配对样本：bootstrap 时对图像 ID 成对有放回重采样，配对检验时比较每张图的 mIoU、F1、FP/FN 或错误面积差。定性可视化和失败案例分析则是其中的解释性部分：按预先固定或基于总体误差分位数的规则，展示具体图像的 RGB、GT、各模型预测及 FP/FN 图；不能只展示事后最有利的图片。当前 robustness 脚本已保存这些逐图像混淆计数，尚未自动生成最终论文图和 p 值表。
 
 **交付**：`Figure 2. Qualitative comparison`、`Figure 4. Failure analysis`。
 
@@ -315,14 +311,14 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 ### Phase 2：验证核心机制
 
 7. 核实 B2/B3、C2、L2/L3 与 L1/M5 的单变量比较；B4 不属于当前 protocol v5。
-8. 单独完成 Params、GFLOPs、FPS/latency 测量；`run_vram_smoke.sh` 只作显存探针。
+8. 运行 `scripts/run_complexity_eval.sh` 完成 Params、GFLOPs、FPS/latency 和峰值推理显存测量；`run_vram_smoke.sh` 仍只作显存/建模探针。
 9. 核实双流、模态划分、损失和参数效率方面的结论是否成立。
 
 ### Phase 3：冻结后最终测试与写作
 
 10. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
 11. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
-12. 执行已在 Val 冻结的扰动协议（若另行实施 E5），并使用预注册固定 ID 选择 Test 可视化；完成效率测试和多 seed 汇总。
+12. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用预注册固定 ID/规则选择 Test 可视化；完成效率测试和多 seed 汇总。
 13. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果。
 
 > **注意**：理想流程是先在 Validation 完成各配置、checkpoint、阈值和实验矩阵的冻结，然后一次性评价 Test。不能完成一次 Test 后再决定是否增加某个更可能获胜的分组或改主模型。
@@ -367,12 +363,19 @@ outputs_experiments/pmdfnet_mmlsv2/
 
 protocol_artifacts/
   experiment_protocol.yaml       # 若另行生成，必须与 JSON 一致
-  robustness_protocol.yaml       # 仅实施 E5 时提供
+  robustness_protocol.json       # E5 的固定扰动协议
   channel_mapping.yaml
-  dataset_manifest.csv
-  dataset_audit.md
   mapping_manifest.json
   mapping_match_report.json
+
+outputs_experiments/complexity/
+  complexity_results.json
+  complexity_results.csv
+
+outputs_experiments/robustness/
+  robustness_results.json
+  robustness_results.csv
+  robustness_per_image.jsonl
 ```
 
 当前训练协议源文件是 `configs/mmlsv2_paper_protocol.json`；运行目录由训练器自动记录配置、命令、Git、可复现性、运行时、checkpoint 和指标。正式 Test 评估写入各 run 目录的 `test_metrics.json` 和 `results.json`。如用于公开复现，至少提供数据处理脚本、训练/评估脚本、主模型配置和运行命令。对于不能公开再分发的数据，提供合法下载途径和确定性转换步骤。
@@ -380,7 +383,7 @@ protocol_artifacts/
 ## 6. 投稿前检查清单
 
 - [ ] 已明确主模型 Small 的版本及其与原 Workshop Tiny/Small 结果的关系；当前 protocol v5 不包含 PMDFNet-Tiny 正式运行项。
-- [ ] 已完成 E0：通道、单位、归一化、映射、哈希、场景/相邻切片泄漏检查。
+- [ ] 已记录公开数据集来源、引用、通道、单位、归一化和映射规则；本轮不以数据泄漏、场景独立性或完整数据审计作为阻塞项。
 - [ ] 标注来源、数据划分、Test 使用边界已完整披露。
 - [ ] 所有主基线在相同评估协议下比较；参数近似匹配对照已报告差异。
 - [ ] B1–B3 都满足固定 3+4 的分支输入宽度；B4 不属于当前 protocol v5。
@@ -390,6 +393,9 @@ protocol_artifacts/
 - [ ] 已记录 Train/Val 使用 Train 统计量、公开 Test 评估使用 MARS Test 统计量的当前实现口径。
 - [ ] 扰动类型和强度在 Validation 确定，最终 Test 不参与修改方案。
 - [ ] Test 定性样本选择不依据模型表现。
+- [ ] 已运行并归档 `run_complexity_eval.sh` 的 Params/GFLOPs/FPS/latency/显存结果。
+- [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
+- [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。
 - [ ] 不将 TTA、Ensemble、测试集校正和模型主体效果混为一谈。
 - [ ] 物理分组、效率和鲁棒性方面的论文表述有对应的实证支持。
 - [ ] 不把 converted MMLSv2 说成独立新数据集，不在缺乏证据时声称真实跨区域泛化。
