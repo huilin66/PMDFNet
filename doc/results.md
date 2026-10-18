@@ -1,355 +1,260 @@
 # PMDFNet：MMLSv2 实验结果记录
 
-> 对应计划：[`PMDFNet_MMLSv2_Experiment_Plan_v2.md`](PMDFNet_MMLSv2_Experiment_Plan_v2.md)<br>
-> 记录日期：2026-10-16（本轮：结果表按"仅保留 L1–L3"重置）<br>
-> 文档性质：阶段性实验台账，不等同于最终论文中的 Results/Discussion。
+> 对应实验计划：[`PMDFNet_MMLSv2_Experiment_Plan_v2.md`](PMDFNet_MMLSv2_Experiment_Plan_v2.md)
+> 协议：`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`
+> 更新时间：2026-10-17
+> 结果来源：A100-1（`cuda:0`），远程目录 `/data/huilin/projects/PMDFNet/outputs_experiments/pmdfnet_mmlsv2/`
 
-## 结果摘要
+本文档记录当前 protocol v5 的正式实验结果。表中 Test 指 converted MMLSv2 的带公开标签 `test` split，不是原比赛的隐藏 Test2 榜单。
 
-当前论文主模型定义为 **PMDFNet-Small + CE-only**，其配置为原 L1；论文结果表中记为 M5。
+## 1. 当前结论
 
-**本次重置口径**：除损失函数消融 L1/L2/L3 外，其余全部实验（M1–M4、A1/A2/A5、B2/B3、C2）的数值均已从本文档清空。协议中已不存在独立的 M5 条目（见 §5 配置状态）。这些配置的旧结果来自此前的 combined-loss（CE + Dice）协议，与当前主模型的 CE-only 口径不一致，不得继续引用，需按统一口径重跑后重新填入。
+- 正式矩阵共 19 个协议运行项、3 个随机种子（41/42/43），共 57 个 run；训练和 Test 评估均已完成。
+- 主模型是 `L1`，论文展示 ID 为 `M5`：PMDFNet-Small、`3+4` 双流、Add Fusion、CE-only。
+- L1/M5 的 Test mIoU 为 **0.8594 ± 0.0034**，是当前 19 个正式运行项中的最高均值。
+- 相同输入的单流直接对照 M4 为 `0.8470 ± 0.0100`；L1 相对 M4 的描述性提升为 `+0.0124` mIoU。
+- 原始通道分组 L1 为 `0.8594`，B2 为 `0.8520`，B3 为 `0.8460`；当前结果支持“本轮原始分组表现最好”的描述，但尚未完成显著性检验。
+- Add Fusion 的 L1 为 `0.8594`，Concat Fusion 的 C2 为 `0.8462`；在当前训练协议下 Add 表现更好。
+- CE-only（L1）高于 CE + Dice（L3，`0.8534`）和 Dice-only（L2，`0.8323`）。这只是同一架构、同一数据划分下的描述性结果。
+- 当前没有完成图像级 bootstrap/配对检验、复杂度正式测量、定性可视化和 E5 受控扰动实验，因此不把上述差异写成统计显著或鲁棒性结论。
 
-重置后本文档保留的唯一数值是损失函数消融参考结果（CE / Dice / CE+Dice，同一 PMDFNet-Small 架构、同一训练协议）：
+## 2. 数据、映射与评价边界
 
-| ID | 变量 | Val 最优 mIoU | Test mIoU | Test IoU-FG | Test F1 | 当前状态 |
-|---|---|---:|---:|---:|---:|---|
-| L1 | CE only | 0.8209 ± 0.0096 | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.8990 ± 0.0025** | 保留（主模型即此配置） |
-| L2 | Dice only | — | 0.8323 ± 0.0054 | 0.7812 ± 0.0099 | 0.8771 ± 0.0062 | 保留（历史损失对照） |
-| L3 | CE + Dice | — | 0.8534 ± 0.0143 | 0.8089 ± 0.0188 | 0.8943 ± 0.0116 | 保留（历史 combined-loss run；非当前主模型） |
+### 2.1 数据版本
 
-> 说明：L2/L3 的 Val 最优 mIoU 与逐 seed 数值当前未归档在本文档内，仅在远程运行目录中，故此处留空。
-
-初步观察如下：
-
-- 当前主模型为 L1 的 CE-only 配置，Test mIoU 为 `0.8594 ± 0.0034`；L1 已作为 M5 登记，不再单独训练 M5。
-- 除 L1/L2/L3 外的表格结果已全部清空；M1–M4 使用 combined loss，A1/A2/A5/B2/B3/C2 的旧结果亦为 combined-loss 协议，均不能继续使用。
-- L3 的 `0.8534 ± 0.0143` 来自旧 combined-loss 协议下的 PMDFNet run，仅作为损失对照保留，不与当前主模型混称。
-- 本文档当前不包含任何基线间比较结论；M1–M4 及全部消融需按 CE-only 统一口径重跑。
-
-## 0. 研究问题、边界与待验证主张
-
-### RQ1：统一协议下是否有稳定性能改善
-
-**暂无有效答案。** 主模型已固定为 CE-only 的 PMDFNet-Small（L1），但 M1–M4 基线当前使用 combined loss，损失口径不一致，不能与主模型直接对比。M1–M4 需按 CE-only 重跑；在重跑完成前不做任何基线间比较结论。
-
-### RQ2：性能是否超出双编码器带来的容量影响
-
-**暂无有效答案。** M4 约为 `50.09M` 参数，M5/L1 约为 `99.54M` 参数；A5（近似容量对照，约 `88.33M`）当前结果已清空，需按 CE-only 重跑后再比较容量因素。
-
-### RQ3：原始 3+4 通道分组是否更优
-
-**暂无有效答案。** B1 不再复用任何已完成结果；B2、B3 当前结果已清空，需按 CE-only 重跑后比较分组。
-
-### RQ4：Add Fusion 与 CE + Dice 的设计是否合理
-
-**暂无有效答案（损失部分除外）。** C1/Add 不再复用已完成结果，C2 当前已清空，二者需按 CE-only 重跑后比较融合算子。损失函数方面，同一架构下的 L1（CE-only）/L2（Dice-only）/L3（CE+Dice）已完成，是本轮保留的参考结果。
-
-### RQ5：性能差异是否可靠并对扰动/缺失模态稳定
-
-**尚未完成。** 除 L1–L3 外无有效结果；E5 受控扰动和模态缺失实验尚未执行。
-
-### 结论边界
-
-当前文档不包含任何方法比较结论。可确认的仅有：论文主模型为 CE-only 的 PMDFNet-Small（L1）；同一架构下的损失函数消融中 CE-only 优于 Dice-only 与 CE + Dice。基线对比、双流增益、容量解释、通道分组优势均待重跑后判断。当前不能声称严格的 physics-informed learning，也不能声称跨区域泛化或优于原比赛隐藏 Test。
-
-### 0.1 主模型选择
-
-当前主模型定义为 `PMDFNet-Small + CE-only`，即原 L1 配置；论文结果表中将其记为 M5。单流 ConvNeXt-Small + MLP Decoder（M4）仍作为直接对照，但需按 CE-only 重跑后才可用于比较。
-
-原 Workshop 的 Tiny/Small 表格、Test1/Test2 定义与本轮 converted MMLSv2 结果尚未在本文件中混排；后续论文需要单独说明 Workshop 结果与本轮无 TTA 的公平比较之间的关系。
-
-### 0.2 固定网络定义
-
-当前 M5 配置如下：
-
-| 项目 | 当前配置 |
+| 项目 | 当前记录 |
 |---|---|
-| Stream 1 | 输出通道 `0,1,2`：Thermal + Slope + DEM |
-| Stream 2 | 输出通道 `3,4,5,6`：Grayscale + R + G + B |
-| Backbone | 两条独立 ConvNeXt-Small |
-| Fusion | 四尺度逐元素 Add |
-| Decoder | SegFormer All-MLP Decoder |
-| Loss | CE-only（代码中的 `ce`） |
+| 训练数据根目录 | `/data/huilin/projects/PMDFNet/data/mmlsv2_mapped` |
+| 通道顺序 | Thermal、Slope、DEM、Grayscale、R、G、B |
+| Train / Val / Test | 465 / 66 / 133 |
+| 图像尺寸 | `128 × 128` |
+| 当前 Test | converted MMLSv2 的带 mask 的公开 `test` split |
+| 官方隐藏 Test2 | 未用于本轮数值评价 |
 
-上述配置与协议中的 L1 逐字段一致（仅 `experiment_name` 与 `seed` 不同），因此 M5 不再单独训练。
+主模型的两条输入流为：
 
-## E0. 数据版本与转换映射协议审计
+- Stream 1：`0,1,2`，Thermal + Slope + DEM；
+- Stream 2：`3,4,5,6`，Grayscale + R + G + B。
 
-### E0.1 转换与通道审计
+### 2.2 映射核验
 
-**状态：已建立基础记录，但尚未闭环。** 数据根目录的 `mapping_manifest.json` 已记录来源目录、参考比赛数据目录、输入/输出通道顺序、scale/offset 和 split 数量。当前清单给出的输出通道顺序为：
+映射报告使用像素绝对误差阈值 `atol=1e-3`。以下百分比是所有比较值中落在阈值内的比例，不等价于逐文件完全相等：
 
-`Thermal → Slope → DEM → Grayscale → R → G → B`。
+| Split | 图像像素阈值内比例 | Mask |
+|---|---:|---|
+| train | 99.9986% | 100.0000% |
+| val | 99.9999% | 100.0000% |
+| test | 99.9966% | 参考 mask 不可用 |
 
-划分数量为 Train `465`、Val `66`、Test `133`。映射验证记录显示多数通道的误差比例很低，但 Slope/DEM 仍出现较大的最大绝对误差记录，Train mask 验证还记录了 `1` 个差异像素。因此，映射清单可以作为当前运行的来源记录，但在投稿前仍需解释这些异常值并完成独立复核，不能直接写成"逐像素完全一致"。
+按波段统计如下：
 
-尚未在仓库中形成完整、版本化的 `channel_mapping.yaml`、通道统计表、直方图和转换脚本交付物；当前部分证据仍位于远程数据目录。
+| 波段 | train | val | test |
+|---|---:|---:|---:|
+| Thermal | 100.0000% | 100.0000% | 100.0000% |
+| Slope | 99.9899% | 99.9995% | 99.9765% |
+| DEM | 100.0000% | 100.0000% | 100.0000% |
+| Grayscale | 100.0000% | 100.0000% | 100.0000% |
+| R | 100.0000% | 100.0000% | 100.0000% |
+| G | 100.0000% | 100.0000% | 100.0000% |
+| B | 100.0000% | 100.0000% | 100.0000% |
 
-### E0.2 划分与潜在泄漏审计
+由于 Slope 仍有少量超出阈值的值，且 Test 没有对应参考 mask，本次映射报告的 `complete_match` 仍为 `false`。因此论文中不能写成“所有像素逐值完全一致”；映射细节以远程目录中的 `mapping_manifest.json` 和 `mapping_match_report.json` 为准。
 
-**状态：划分固定，场景级泄漏审计未完成。** 本轮训练和评价使用固定的 `train/val/test` 文件列表与 465/66/133 划分；但相邻切片、原始场景 ID、跨 split 哈希重复和 scene-level disjoint 尚未形成正式审计报告。论文暂时不能声称场景级独立或跨区域泛化。
+## 3. 统一训练与评价协议
 
-### E0.3 最低交付物
-
-| 交付物 | 当前状态 |
+| 项目 | 设置 |
 |---|---|
-| `dataset_manifest.csv` | 未在仓库中形成最终版本；数据侧有 split/映射清单信息 |
-| `channel_mapping.yaml` | 未完成 |
-| `dataset_audit.md` | 未完成 |
-| 固定文件列表、转换脚本与 SHA-256 | 未完成统一归档 |
+| 输入 | 7 通道，`128×128` |
+| 训练预算 | 100 epochs |
+| Batch size | 32 |
+| 优化器 | AdamW |
+| 学习率 | `1e-4` |
+| Weight decay | `5e-4` |
+| Scheduler | cosine |
+| Augmentation | `mars`，`aug_prob=0.5`，`mosaic_prob=0.5` |
+| Workers | 4 |
+| Mixed precision | false |
+| Seeds | 41、42、43 |
+| Checkpoint | 每个 epoch 验证，按 Val mIoU 保存 `best.pth` |
+| Test 预测 | `argmax`，无 TTA、无 Ensemble、无 Test 阈值搜索 |
+| Test 主指标 | 所有 Test 像素汇总混淆矩阵后的 global-pixel metrics |
+| Test 样本数 | 133，每个 run 5 个 batch |
 
-## 1. 全实验通用协议
+主协议使用 CE-only；仅 L2 覆盖为 Dice-only，L3 覆盖为代码实现的 CE + Dice。公开 Test 评估使用 `tools/evaluation/evaluate_test_metrics.py`，同时保存 global-pixel 指标和 batch-average 指标，本文表格统一使用前者。
 
-### 1.1 数据与模型选择
+M6/UPerNet 因当前 CUDA `adaptive_avg_pool2d` 反向传播没有确定性实现，协议显式使用 `deterministic=false`；其余 54 个 run 使用 `deterministic=true`。这不是评估失败，但 M6 的逐位可复现性弱于其他配置。
 
-本轮评价使用固定的 converted MMLSv2 Test split，并采用每个 seed 的验证集最优 mIoU checkpoint；不得使用 Test 分数回头选择 seed、阈值或主模型。需要注意：这里的 Test 是有标注的公开 Test split，不能与原比赛的隐藏测试榜单等同。
+## 4. 正式矩阵完成情况
 
-### 1.2 基础训练设置
+| 分组 | 正式运行项 | run 数量 | 状态 |
+|---|---|---:|---|
+| core | M1、M2、M3、M4 | 12 | 已完成 |
+| ablations | A1、A2、A5、B2、B3、C2、L1、L2、L3 | 27 | 已完成 |
+| extended | M6、M7、M8、M9、M10、M11 | 18 | 已完成 |
+| 合计 | 19 个运行项 | **57** | **57/57 完成** |
 
-正式核心运行的实际 `config.json` 和启动命令记录为：
+训练结束后每个 run 均保存 `best.pth`、`last.pth`、`config.json`、`metrics.csv`、日志和运行记录；Test 阶段已为 57 个 run 生成 `test_metrics.json` 和 `results.json`。
 
-- 输入尺寸 `128×128`，训练 `100 epochs`，**batch size=32**；
-- AdamW，学习率 `1e-4`，weight decay `5e-4`，cosine scheduler；
-- `augmentation=mars`，`aug_prob=0.5`，`mosaic_prob=0.5`；
-- ImageNet/代码配置的预训练开关为 `pretrain=true`；
-- `mixed_precision=false`，`num_workers=4`，设备为 A100 `cuda:0`；
-- `deterministic=true`，严格确定性设置已记录；
-- 每个 epoch 验证并按 `primary_metric=miou` 选择 best checkpoint，另保存 last checkpoint。
+为避免重复训练，论文显示 ID 与协议运行 ID 的关系为：
 
-配置模板 `configs/mmlsv2_paper_protocol.json` 的 `common` 段当前 batch size 已为 `32`，与正式运行一致；但 `common.loss` 仍为 `"combined"`，与当前主模型的 `ce` 口径相反，需在重跑前统一，避免新增实验静默使用错误损失。
+| 论文显示 ID | 实际运行 ID |
+|---|---|
+| M5、A4、B1、C1 | L1 |
+| A3 | M4 |
 
-### 1.3 统一评价口径
+这些是同一配置的显示别名，不代表额外训练。
 
-Test 结果使用全数据集像素累计混淆矩阵计算 mIoU、Foreground IoU、Background IoU、Precision、Recall 和 F1。每个运行的 `test_metrics.json` 同时保留 global-pixel 与 batch-average 两套数值；本文档和 `paper_aggregate.csv` 使用前者作为主口径。
+## 5. 主基线结果
 
-Test 评价共覆盖 `133` 张图像，每个运行使用 batch size `32`、共 `5` 个 batch。阈值采用当前二分类评估实现的默认规则；独立的 Val 阈值冻结实验尚未补齐，投稿前需在协议中明确写出。
+下表为 3 个 seed 的均值 ± 样本标准差。Val 列是每个 seed 的最佳验证 mIoU 再跨 seed 汇总；Test 指标是全 Test 像素汇总后的 global-pixel 指标。
 
-## E1. 主实验：公平基线对比
-
-**状态：已重置，并扩展了基线集合。** 主模型固定为 CE-only 的 PMDFNet-Small（L1）。M1–M4 基线的旧结果使用 combined loss，与主模型口径不一致，已从本文档清空；E1 另新增 6 个对比基线（M6–M11）。
-
-为使 E1 成立，M1–M11 必须按 CE-only 重跑（3 seeds）；否则只能把主表降级为"各方法使用各自常规损失"的说明性对比，并在正文逐行标注损失口径。
-
-| ID | 方法 | Val best mIoU | Test mIoU | Test IoU-FG | Test IoU-BG | Test F1 | 当前状态 |
-|---|---|---:|---:|---:|---:|---:|---|
-| M1 | U-Net + ResNet50 | — | — | — | — | — | 待 CE-only 重跑 |
-| M2 | DeepLabV3+ ResNet50 | — | — | — | — | — | 待 CE-only 重跑 |
-| M3 | SegFormer MiT-B2 | — | — | — | — | — | 待 CE-only 重跑 |
-| M4 | 单流 ConvNeXt-Small + MLP | — | — | — | — | — | 待 CE-only 重跑 |
-| M6 | UPerNet + ResNet50 | — | — | — | — | — | 待 CE-only 重跑（新增） |
-| M7 | FPN + ResNet50 | — | — | — | — | — | 待 CE-only 重跑（新增） |
-| M8 | MANet + ResNet50 | — | — | — | — | — | 待 CE-only 重跑（新增） |
-| M9 | U-Net++ + ResNet50 | — | — | — | — | — | 待 CE-only 重跑（新增） |
-| M10 | OCRNet + HRNet-W18 | — | — | — | — | — | 待 CE-only 重跑（新增） |
-| M11 | M3LSNet | — | — | — | — | — | 待 CE-only 重跑（新增） |
-| M5 | PMDFNet-Small + CE-only | — | — | — | — | — | 采用 L1（见损失消融表） |
-
-新增基线的口径细节：
-
-- backbone 统一为 ResNet50：M1/M2 与 M6–M9 都是 ResNet50，但走不同的编码器入口——M1/M2 是 `resnet50`（`train_ablation.plain_model` 直接传给 SMP，由 SMP 的 resnet 编码器加载 torchvision 权重），M6–M9 是 `tu-resnet50`（SMP 的 timm universal 编码器）。两者骨干与通道配置相同，但预训练权重由不同代码路径加载；正式训练前建议先核对两组编码器的预训练权重来源，或在论文中明确说明该差异。
-- M9 是 U-Net++；仓库另有一个历史键 `unetplusplus_resnest50`（ResNeSt50d），两者不是同一个模型，不要混用。
-- M10 走 `networks.OCRNet.SMP_OCRNet`（HRNet-OCR 结构，`tu-hrnet_w18`），训练时带辅助头，`forward_loss` 按 `loss_main + 0.4 * loss_aux` 计算。
-- M11 走 `networks.get_model`（`model_name=m3lsnet`），`pretrain=false`（M3LSNet 无 ImageNet 权重）。
-- M11 的结果依赖 `mamba_ssm` 是否可导入：可导入时使用 selective-scan 核心，否则使用内置 gated-conv 模拟器。必须记录报告所用的路径。
-- M6–M11 的 Params/GFLOPs 尚未实测（见 E6.2）。
-
-### E1.1 损失函数消融（本轮保留的唯一数值结果）
-
-同一 PMDFNet-Small 架构、同一训练协议，仅改变损失函数：
-
-| ID | 损失 | Val best mIoU | Test mIoU | Test IoU-FG | Test IoU-BG | Test F1 |
+| ID | 方法 | Val best mIoU | Test mIoU | Test IoU-FG | Test IoU-BG | Test F1 |
 |---|---|---:|---:|---:|---:|---:|
-| L1 | CE only | 0.8209 ± 0.0096 | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.9022 ± 0.0028** | **0.8990 ± 0.0025** |
-| L2 | Dice only | — | 0.8323 ± 0.0054 | 0.7812 ± 0.0099 | — | 0.8771 ± 0.0062 |
-| L3 | CE + Dice | — | 0.8534 ± 0.0143 | 0.8089 ± 0.0188 | — | 0.8943 ± 0.0116 |
+| M1 | U-Net + ResNet50 | 0.8135 ± 0.0073 | 0.8295 ± 0.0071 | 0.7790 ± 0.0081 | 0.8799 ± 0.0062 | 0.8757 ± 0.0051 |
+| M2 | DeepLabV3+ + ResNet50 | 0.8062 ± 0.0017 | 0.8176 ± 0.0108 | 0.7629 ± 0.0150 | 0.8723 ± 0.0068 | 0.8654 ± 0.0097 |
+| M3 | SegFormer MiT-B2 | 0.8260 ± 0.0017 | 0.8276 ± 0.0071 | 0.7757 ± 0.0101 | 0.8796 ± 0.0043 | 0.8737 ± 0.0064 |
+| M4 | 单流 ConvNeXt-Small + MLP | 0.8316 ± 0.0081 | 0.8470 ± 0.0100 | 0.7998 ± 0.0132 | 0.8941 ± 0.0068 | 0.8887 ± 0.0081 |
+| **M5 = L1** | **PMDFNet-Small，双流 Add，CE-only** | **0.8209 ± 0.0096** | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.9022 ± 0.0028** | **0.8990 ± 0.0025** |
+| M6 | UPerNet + ResNet50 | 0.7997 ± 0.0057 | 0.8100 ± 0.0099 | 0.7524 ± 0.0131 | 0.8677 ± 0.0068 | 0.8587 ± 0.0085 |
+| M7 | FPN + ResNet50 | 0.8013 ± 0.0109 | 0.8099 ± 0.0106 | 0.7513 ± 0.0151 | 0.8686 ± 0.0061 | 0.8579 ± 0.0099 |
+| M8 | MANet + ResNet50 | 0.8108 ± 0.0065 | 0.8245 ± 0.0050 | 0.7720 ± 0.0072 | 0.8771 ± 0.0028 | 0.8713 ± 0.0046 |
+| M9 | U-Net++ + ResNet50 | 0.8149 ± 0.0049 | 0.8121 ± 0.0094 | 0.7532 ± 0.0125 | 0.8710 ± 0.0065 | 0.8592 ± 0.0081 |
+| M10 | OCRNet + HRNet-W18 | 0.8153 ± 0.0068 | 0.8214 ± 0.0167 | 0.7675 ± 0.0235 | 0.8753 ± 0.0099 | 0.8683 ± 0.0151 |
+| M11 | M3LSNet | 0.8134 ± 0.0022 | 0.8176 ± 0.0027 | 0.7630 ± 0.0042 | 0.8722 ± 0.0024 | 0.8656 ± 0.0027 |
 
-L3 为旧 combined-loss 协议下的 PMDFNet run，作为损失对照保留；本文档不将其等同于当前主模型的独立 run。L2/L3 的 Val 与 IoU-BG 数值未归档在本文件（见"复现目录与记录"）。
+## 6. 消融结果
 
-### E1.2 分 seed Test mIoU
+### 6.1 模态、容量与通道分组
 
-**待重跑后填写。** M1–M4 的逐 seed 数值已重置；L1/L2/L3 的逐 seed 数值当前仅在远程运行目录中，尚未统一归档。
+| ID | 配置 | Test mIoU | Test IoU-FG | Test IoU-BG | Test F1 |
+|---|---|---:|---:|---:|---:|
+| A1 | 光学单流：Grayscale + RGB | 0.8331 ± 0.0054 | 0.7821 ± 0.0076 | 0.8842 ± 0.0037 | 0.8777 ± 0.0048 |
+| A2 | 物理单流：Thermal + Slope + DEM | 0.8425 ± 0.0060 | 0.7964 ± 0.0086 | 0.8885 ± 0.0044 | 0.8867 ± 0.0053 |
+| A3 | 7 通道单流 | **复用 M4** | **复用 M4** | **复用 M4** | **复用 M4** |
+| A4 | 原始双流 | **复用 L1/M5** | **复用 L1/M5** | **复用 L1/M5** | **复用 L1/M5** |
+| A5 | 单流 ConvNeXt-Base，近似容量对照 | 0.8307 ± 0.0064 | 0.7796 ± 0.0088 | 0.8818 ± 0.0048 | 0.8761 ± 0.0055 |
+| B1 | 原始 3+4 物理分组 | **复用 L1/M5** | **复用 L1/M5** | **复用 L1/M5** | **复用 L1/M5** |
+| B2 | RGB vs. 物理 + Grayscale | 0.8520 ± 0.0033 | 0.8066 ± 0.0049 | 0.8974 ± 0.0017 | 0.8929 ± 0.0030 |
+| B3 | Thermal + DEM + Grayscale vs. Slope + RGB | 0.8460 ± 0.0199 | 0.7973 ± 0.0286 | 0.8948 ± 0.0112 | 0.8870 ± 0.0178 |
 
-### E1.3 当前解释
+A5 是近似容量对照，不是严格参数量匹配；正式 Params/GFLOPs 结果完成前，不能将 A5 差异完全归因于模态解耦。
 
-本轮不给出基线对比结论。已完成的损失函数消融显示 CE-only（L1）高于 CE + Dice（L3）与 Dice-only（L2）；该结论仅在同一架构内成立，不外推到其他骨干。基线间差异需在 M1–M4 按 CE-only 重跑后，结合配对统计检验再作判断。
+### 6.2 Fusion 与损失
 
-## E2. 单流/双流与模态贡献消融
+| ID | 变量 | Test mIoU | Test IoU-FG | Test IoU-BG | Test F1 |
+|---|---|---:|---:|---:|---:|
+| C1 | Add Fusion | **复用 L1/M5** | **复用 L1/M5** | **复用 L1/M5** | **复用 L1/M5** |
+| C2 | Concat + 1×1 Conv | 0.8462 ± 0.0077 | 0.7977 ± 0.0104 | 0.8946 ± 0.0052 | 0.8875 ± 0.0065 |
+| L1 / M5 | CE-only | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.9022 ± 0.0028** | **0.8990 ± 0.0025** |
+| L2 | Dice-only | 0.8323 ± 0.0054 | 0.7812 ± 0.0099 | 0.8834 ± 0.0008 | 0.8771 ± 0.0062 |
+| L3 | CE + Dice | 0.8534 ± 0.0143 | 0.8089 ± 0.0188 | 0.8979 ± 0.0097 | 0.8943 ± 0.0116 |
 
-**状态：已重置。** A1、A2、A5 的旧结果已从当前表格清空，需按 CE-only 重跑；A3 复用 M4，A4 复用 M5/L1（二者均需等待对应重跑/登记确认）。下表为 global-pixel Test 指标的跨 seed 均值 ± 样本标准差。
+## 7. Precision 与 Recall 补充结果
 
-| ID | 方法 | Val best mIoU | Test mIoU | Test IoU-FG | Test F1 | 当前状态 |
-|---|---|---:|---:|---:|---:|---|
-| A1 | 光学单流（4 通道） | — | — | — | — | 已重置，待 CE-only 重跑 |
-| A2 | 物理单流（3 通道） | — | — | — | — | 已重置，待 CE-only 重跑 |
-| A3 | 7 通道单流（复用 M4） | — | — | — | — | 等待 M4 CE-only 重跑 |
-| A4 | 原始双流（复用 M5/L1） | — | — | — | — | 复用 L1，数值见 E1.1 |
-| A5 | 近似容量对照：单流 ConvNeXt-Base | — | — | — | — | 已重置，待 CE-only 重跑 |
+| ID | Precision | Recall |
+|---|---:|---:|
+| M1 | 0.8729 ± 0.0135 | 0.8788 ± 0.0071 |
+| M2 | 0.8702 ± 0.0095 | 0.8610 ± 0.0215 |
+| M3 | 0.8782 ± 0.0068 | 0.8694 ± 0.0160 |
+| M4 | 0.8987 ± 0.0053 | 0.8791 ± 0.0116 |
+| M5 = L1 | **0.9014 ± 0.0075** | **0.8967 ± 0.0054** |
+| M6 | 0.8697 ± 0.0073 | 0.8480 ± 0.0127 |
+| M7 | 0.8763 ± 0.0043 | 0.8406 ± 0.0208 |
+| M8 | 0.8740 ± 0.0039 | 0.8688 ± 0.0118 |
+| M9 | 0.8849 ± 0.0119 | 0.8351 ± 0.0155 |
+| M10 | 0.8743 ± 0.0022 | 0.8628 ± 0.0314 |
+| M11 | 0.8696 ± 0.0129 | 0.8619 ± 0.0159 |
+| A1 | 0.8875 ± 0.0112 | 0.8683 ± 0.0153 |
+| A2 | 0.8760 ± 0.0182 | 0.8983 ± 0.0243 |
+| A5 | 0.8808 ± 0.0154 | 0.8719 ± 0.0189 |
+| B2 | 0.9004 ± 0.0033 | 0.8856 ± 0.0090 |
+| B3 | 0.9089 ± 0.0125 | 0.8672 ± 0.0430 |
+| C2 | 0.9080 ± 0.0092 | 0.8680 ± 0.0135 |
+| L2 | 0.8857 ± 0.0197 | 0.8697 ± 0.0317 |
+| L3 | 0.8964 ± 0.0069 | 0.8921 ± 0.0166 |
 
-A5 是当前最关键的单点风险：若 A5（约 88.33M）在 CE-only 下达到或超过 L1（约 99.54M），则"双流收益来自容量"的解释成立，主结论需要收缩。在 A5 完成前不对双流增益或容量因素作任何结论。
+## 8. 每个 seed 的 Test mIoU
 
-## E3. 通道分组消融
+| ID | seed 41 | seed 42 | seed 43 |
+|---|---:|---:|---:|
+| M1 | 0.8296 | 0.8365 | 0.8223 |
+| M2 | 0.8210 | 0.8263 | 0.8055 |
+| M3 | 0.8286 | 0.8342 | 0.8201 |
+| M4 | 0.8582 | 0.8438 | 0.8389 |
+| M5 = L1 | 0.8634 | 0.8576 | 0.8573 |
+| M6 | 0.8215 | 0.8038 | 0.8049 |
+| M7 | 0.8181 | 0.7980 | 0.8137 |
+| M8 | 0.8267 | 0.8188 | 0.8281 |
+| M9 | 0.8035 | 0.8221 | 0.8108 |
+| M10 | 0.8029 | 0.8259 | 0.8353 |
+| M11 | 0.8159 | 0.8207 | 0.8163 |
+| A1 | 0.8378 | 0.8344 | 0.8272 |
+| A2 | 0.8493 | 0.8381 | 0.8399 |
+| A5 | 0.8306 | 0.8371 | 0.8243 |
+| B2 | 0.8543 | 0.8482 | 0.8536 |
+| B3 | 0.8249 | 0.8486 | 0.8645 |
+| C2 | 0.8545 | 0.8391 | 0.8450 |
+| L2 | 0.8279 | 0.8306 | 0.8383 |
+| L3 | 0.8635 | 0.8596 | 0.8371 |
 
-**状态：已重置。** B1 不再复用 M5 的旧结果；B2/B3 的旧结果已清空；B4 未纳入本轮计划矩阵。
+没有删除或挑选 seed；所有 41/42/43 均纳入均值和标准差计算。
 
-| ID | Stream 1 | Stream 2 | Test mIoU | Test IoU-FG | Test F1 | 当前状态 |
-|---|---|---|---:|---:|---:|---|
-| B1 | Thermal + Slope + DEM | Grayscale + RGB | — | — | — | 复用 L1，数值见 E1.1 |
-| B2 | RGB | Thermal + Slope + DEM + Grayscale | — | — | — | 已重置，待 CE-only 重跑 |
-| B3 | Thermal + DEM + Grayscale | Slope + RGB | — | — | — | 已重置，待 CE-only 重跑 |
+## 9. 结果解读边界
 
-分组结论待 B2/B3 按 CE-only 重跑后判断。
+### 9.1 双流与模态贡献
 
-## E4. 融合与损失消融
+L1/M5 比直接单流对照 M4 高 `0.0124` mIoU，A1 和 A2 均低于 L1，说明在当前协议下两类输入共同使用具有描述性收益。A5 的结果也低于 L1，但 A5 只是近似容量对照；在完成统一复杂度测量前，不能把差异单独解释为双流结构本身的因果收益。
 
-**状态：已重置（损失部分除外）。** C1 不再复用旧结果；C2 的旧结果已清空；L1/L2/L3 保留为损失函数参考结果。
+### 9.2 通道分组
 
-| ID | 变量 | Test mIoU | Test IoU-FG | Test F1 | 当前状态 |
-|---|---|---:|---:|---:|---|
-| C1 | Add Fusion（复用 L1） | — | — | — | 显示别名 = L1，数值见 E1.1 |
-| C2 | Concat + 1×1 Conv | — | — | — | 已重置，待 CE-only 重跑 |
-| L1 | CE only | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.8990 ± 0.0025** | 保留 |
-| L2 | Dice only | 0.8323 ± 0.0054 | 0.7812 ± 0.0099 | 0.8771 ± 0.0062 | 保留 |
-| L3 | CE + Dice | 0.8534 ± 0.0143 | 0.8089 ± 0.0188 | 0.8943 ± 0.0116 | 保留（历史 combined-loss run） |
+L1/B1 的 `0.8594` 高于 B2 的 `0.8520` 和 B3 的 `0.8460`。当前结果与原始物理分组的设计动机一致，但 B3 跨 seed 波动较大，且尚未完成配对统计检验，因此结论应写成“本轮三 seed 实验中原始分组表现最好”，不写成普遍最优。
 
-损失函数结论：同一架构下 CE-only > CE + Dice > Dice-only。融合算子（Add vs. Concat）的最终比较待 C2 按 CE-only 重跑完成。
+### 9.3 Fusion 与损失
 
-## E5. 受控扰动及模态缺失
+L1 的 Add Fusion 高于 C2 的 Concat Fusion；CE-only 高于 L3 和 L2。由于这些结果来自单一固定数据划分，且复杂度测量尚未补齐，结论限于当前实现和训练预算。
 
-**状态：未执行。** 当前没有冻结的 `robustness_protocol.yaml`，也没有 Val 确定后的扰动等级、Test 结果或鲁棒性曲线。不得根据现有 clean Test 结果推断抗噪声、抗缺失模态或跨区域泛化能力。
+### 9.4 基线比较
 
-## E6. 重复实验与复杂度
+M4 是当前最强的单流直接对照，M1/M3/M8 等其他基线低于 M4；M6、M7、M9、M10、M11 的均值也低于 L1。所有比较使用同一 Test split、相同 3 个 seed 和统一的 global-pixel 指标，但 M6 的确定性设置例外、M11 的实现路径记录仍需补充。
 
-### E6.1 统计可靠性
+## 10. 结果文件与复现记录
 
-除保留的 L1–L3 外，本轮结果表已重置。历史版本曾完成 M1–M5 的 15 个基线 run，以及 A1/A2/A5/B2/B3/C2/L1/L2 的 24 个新增消融 run；本次重置后，这些历史数值不再作为表格结果使用（L1/L2/L3 除外）。图像级 bootstrap 置信区间和配对统计检验尚未完成。
+每个正式 run 的目录结构包含：
 
-需要特别记录：历史 M1 seed 41 的运行元数据显示 `git dirty=true`，其余核心正式运行记录为 clean working tree。该运行在重跑时应在冻结 commit 下重新执行，并把最终 commit/hash 写入结果归档。
+```text
+outputs_experiments/pmdfnet_mmlsv2/
+  {experiment}_s{41,42,43}_{timestamp}/
+    config.json
+    command.txt
+    metrics.csv
+    logs/train.log
+    checkpoints/best.pth
+    checkpoints/last.pth
+    results.json
+    test_metrics.json
+```
 
-### E6.2 参数量与显存 smoke test
+当前核对结果：
 
-以下为 A100 80GB、输入 `32×7×128×128` 的 batch32 smoke test 结果。参数量来自模型实例，显存为本次 smoke test 的峰值 reserved；所有配置均未超过 40GB 限制。该表是模型实例的结构性属性快照，与损失函数口径无关，故本轮保留。
+- `summary.csv`：57 条 completed 记录；
+- `test_metrics.json`：57 份；
+- `results.json`：57 份；
+- Test 使用各 run 的 `best.pth`，选择依据是 Val mIoU；
+- 评估脚本：[`scripts/run_test_eval.sh`](../scripts/run_test_eval.sh)；
+- 测试评估实现：[`tools/evaluation/evaluate_test_metrics.py`](../tools/evaluation/evaluate_test_metrics.py)。
 
-| ID | Params (M) | Peak allocated (GB) | Peak reserved (GB) | Smoke 状态 |
-|---|---:|---:|---:|---|
-| M1 | 32.53 | 2.93 | 3.01 | 通过 |
-| M2 | 26.69 | 1.40 | 1.83 | 通过 |
-| M3 | 24.74 | 1.73 | 2.14 | 通过 |
-| M4 | 50.09 | 2.40 | 2.82 | 通过 |
-| M5 | 99.54 | 4.32 | 4.83 | 通过 |
+所有远程运行记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`。因此这些结果应视为当前工作树快照；投稿或最终归档前应在 clean commit 下重新冻结协议并记录完整 hash。
 
-A1/A2/A5/B2/B3/C2 的 smoke test 也已通过；其中 A5 约 `88.33M`，C2 约 `101.11M`。新增基线 M6–M11 的 Params/VRAM 尚未实测：M11（M3LSNet）含瓶颈自注意力与 VSSD 块，应在正式训练前先确认 batch32 下的显存与吞吐。当前尚未完成统一工具下的 GFLOPs、FPS、latency、warm-up 和多次测速，因此 Table 6 仍不完整。
+M11 的配置明确为 `pretrain=false`，但本轮结果文件没有单独记录 `mamba_ssm` selective-scan 与 fallback 实现路径，后续需要补充该运行环境信息。
 
-### E6.3 日志与 checkpoint 完整性
+## 11. 尚未完成的工作
 
-历史正式运行目录保留：`config.json`、`command.txt`、`metrics.csv`、`logs/train.log`、`results.json`、`runtime.json`、`reproducibility.json`、`checkpoints/best.pth`、`checkpoints/last.pth`，以及 Test 阶段生成的 `test_metrics.json`。best 的选择依据是验证集 `mIoU`，不是 Test 指标；当前没有额外保存辅助 checkpoint。历史结果不再作为当前表格结果；M5 不单独训练，直接采用 L1。
+- E0 的完整数据审计：场景级独立性、相邻切片泄漏、统一 manifest、hash 和通道统计；
+- Params、GFLOPs、FPS/latency 和峰值显存的统一正式测量；
+- 图像级 bootstrap 或配对统计检验；
+- E5 受控扰动、模态缺失和鲁棒性曲线；
+- 固定规则下的 Test 定性结果、FP/FN 分析和失败案例；
+- M11 实际后端路径、M6 非确定性影响的补充记录；
+- 官方隐藏 Test2 的提交或榜单结果。当前结果不能替代官方隐藏测试评价。
 
-旧的 batch16 试运行目录与正式 batch32 结果同时存在于远程输出目录中；本文件只使用正式 batch32 run，不混入旧试运行。Test 结果当前保存在远程项目目录，尚未统一同步到数据集 `outputs/`。
-
-## E7. 定性与误差分析
-
-**状态：未执行。** 当前已有各模型 best checkpoint 和 Test 指标，但尚未按预注册规则固定 Test 图像 ID，也没有生成 `RGB | GT | M4 | M5 | FP/FN map` 图和总体 FP/FN 分布。因此暂不从个别案例推导模型优势。
-
-## 2. 首轮最小实验矩阵执行状态
-
-| 类别 | 计划配置 | 当前状态 |
-|---|---|---|
-| 主方法及直接对照 | M4、M5（采用 L1） | M4 待 CE-only 重跑；M5 采用 L1 |
-| 常见代表性基线 | M1、M2、M3 | 已重置，待 CE-only 重跑 |
-| E1 扩展对比基线 | M6 UPerNet+ResNet50、M7 FPN+ResNet50、M8 MANet+ResNet50、M9 U-Net++、M10 OCRNet+HRNet18、M11 M3LSNet | 新增，尚未训练 |
-| 模态贡献 | A1、A2 | 已重置，待 CE-only 重跑 |
-| 容量对照 | A5 近似容量对照 | 已重置，待 CE-only 重跑 |
-| 物理分组 | B1、B2、B3 | B1 复用 L1；B2/B3 已重置，待 CE-only 重跑 |
-| Fusion/损失 | C1、C2、L1、L2、L3 | C1 复用 L1；C2 已重置，待 CE-only 重跑；L1/L2/L3 保留 |
-| 统计 | M1–M11、A1/A2/A5、B2/B3、C2、L1/L2 | 仅 L1/L2/L3 有价值；其余待重跑 |
-| 效率/可视化 | Params、GFLOPs、FPS、固定案例图 | Params/VRAM 部分完成；M6–M11 待补；其余待做 |
-
-当前分析关口结论：
-
-1. 主模型为 CE-only 的 PMDFNet-Small，直接采用 L1 结果，不再单独训练 M5。
-2. 除 L1/L2/L3 外，全部结果表已重置；E1 现含 M1–M11 共 10 个对比基线，M1–M4 与 M6–M11 均需按 CE-only 口径训练。
-3. 在重跑完成前，本文档不支撑任何双流增益、容量解释、通道分组或融合算子结论。
-
-## 3. 推荐执行顺序的实际进度
-
-| 阶段 | 计划内容 | 当前进度 |
-|---|---|---|
-| Phase 0 | E0 数据审计与协议冻结 | 部分完成：有 mapping manifest 和固定 split；完整泄漏/统计审计未完成 |
-| Phase 1 | M1–M4、M6–M11（CE-only 重跑/新增）、A5、A1/A2 | 待执行；M5 采用 L1 |
-| Phase 2 | B2/B3、C2（CE-only 重跑）、L1/L2/L3 | B2/B3/C2 待执行；L1/L2/L3 已保留 |
-| Phase 3 | 最终 Test、扰动、可视化、效率与写作 | E5、可视化、效率与统计区间待做 |
-
-建议训练顺序：M4（唯一公平直接对照）→ M6–M10（标准分割基线，一次补齐 E1 表）→ A5（容量对照，决定主结论存废）→ M1/M2/M3（统一协议）→ M11（M3LSNet，先做显存 smoke）→ A1/A2/B2/B3/C2。
-
-## 4. 期刊图表清单状态
-
-| 编号 | 图表 | 当前状态 |
-|---|---|---|
-| Table 1 | Converted MMLSv2 划分、通道统计、映射协议 | 部分完成，统计与泄漏审计待补 |
-| Table 2 | M1–M11 主基线 mean±std（含新增 6 个对比基线） | 已重置，待 CE-only 重跑 |
-| Table 3 | A1–A5 模态/容量消融 | 已重置，待 CE-only 重跑 |
-| Table 4 | B1–B3 通道分组 | 已重置，待 CE-only 重跑；B4 未执行 |
-| Table 5 | Add vs. Concat、CE/Dice | 损失部分已有（L1/L2/L3）；融合部分待 C2 重跑 |
-| Table 6 | Params/GFLOPs/FPS | Params/VRAM 部分完成，GFLOPs/FPS 待补 |
-| Table 7 | 受控扰动与模态缺失 | 待完成 |
-| Figure 1 | PMDFNet-Small 结构图 | 未在本结果记录中更新 |
-| Figure 2 | 固定规则的定性比较 | 待完成 |
-| Figure 3 | 鲁棒性曲线 | 待完成 |
-| Figure 4 | 错误统计与失败案例 | 待完成 |
-| Supplementary | manifest、实现细节、单 seed 结果 | 待统一归档 |
-
-## 5. 复现目录与记录
-
-### 已存在的代码与远程产物
-
-- 训练协议：`configs/mmlsv2_paper_protocol.json`。
-- 训练入口：`scripts/train_paper_experiments.py`。
-- Test 批量评价日志：远程 `outputs_experiments/launch_logs/test_metrics_all_20261016.log`。
-- 汇总脚本：`tools/evaluation/summarize_paper_results.py`。
-- 汇总 CSV/JSON：远程 `outputs_experiments/pmdfnet_mmlsv2/aggregate/paper_aggregate.csv` 和 `paper_aggregate.json`。
-- 正式运行目录：远程 `outputs_experiments/pmdfnet_mmlsv2/`；历史 run 仍保留，当前有效表格仅保留 L1/L2/L3。M5 采用 L1，不单独训练；当前尚未统一同步到数据集 `outputs/` 目录。
-- 数据映射记录：远程数据根目录下的 `mapping_manifest.json`。
-
-### 协议配置状态
-
-- 协议版本：`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`；`common.loss = "ce"`，`batch_size = 32`。
-- 分组互斥：`core` = M1–M4、`extended` = M6–M11、`ablations` = A1/A2/A5/B2/B3/C2/L1/L2/L3。三组并集即全部 19 个实验，因此逐组运行（`scripts/run_all.sh`）不会重复训练任何配置。
-- 统一口径：M1–M11 基线与全部消融均继承 `common.loss = ce`；仅损失消融 L2（`dice`）与 L3（`combined`）显式覆盖。
-- M5：协议中已不再保留独立 M5 条目，M5 由 L1 承担（`paper_id` 映射：`M5 → L1`）；A3/A4/B1/C1 同为展示别名（`M4` / `L1`），不单独训练。
-- 协议新增 `paper_id`（逐实验）与 `paper_id_map`（论文 ID → 运行 ID）两级映射，便于汇总脚本与论文表格对齐。
-- 正式运行集共 **57** 个 run：M1–M4 与 M6–M11（10 个核心基线）× 3 +（A1、A2、A5、B2、B3、C2）× 3 +（L1、L2、L3）× 3。`tools/evaluation/evaluate_paper_tests.sh` 的 `EXPECTED_RUNS`（可用同名环境变量覆盖）已同步为该数量。
-- 运行目录命名：CE-only 重跑的实验名统一带 `_ce` 后缀（如 `M4_single_convnext_small_mlp_ce`），以区别于旧 combined-loss 的 `M1_unet_resnet50` / `M4_single_convnext_small_mlp` 等历史 run。两代 run 不得混用。
-- L3 的旧记录口径存疑：`doc` 中历史上的 L3 数值来自更早的协议（可能是 `UnetFormerLoss`，而非当前的 `CombinedLoss` = CE + Dice），因此该 cell 必须重跑，不能与旧数值互换。
-
-### 复现注意事项
-
-1. 运行数据路径、远程主机和输出目录应通过环境变量提供，不应写死到论文命令中。
-2. 重跑必须显式使用 batch32；损失口径已由协议 `common.loss = "ce"` 统一，无需再逐实验覆盖（L2/L3 除外）。
-3. 应在 clean working tree 和固定 commit 下重跑 M1（含此前 dirty 的 seed 41），并把最终 commit/hash 写入结果归档。
-4. 当前结果依赖不能公开再分发的映射数据；论文需要提供合法数据来源和确定性转换步骤，而不能把 converted MMLSv2 表述为新的独立数据集。
-5. L2/L3 的 Val 最优 mIoU、IoU-BG 与逐 seed 数值未归档在本文件，重跑或补录前不要在论文中引用这些空缺项。
-
-## 6. 投稿前检查清单
-
-- [x] 主模型固定为 CE-only 的 PMDFNet-Small，直接采用 L1 结果；M5 不再单独训练。
-- [ ] 完成 M1–M4、M6–M11 的 CE-only 三 seed 重跑/训练（统一损失口径后才可写"统一协议公平对比"）。
-- [ ] 完成 A1/A2/A5、B2/B3、C2 的 CE-only 三 seed 重跑。
-- [x] 已记录 best checkpoint 按验证集 mIoU 选择，并保存 best/last 与完整训练日志。
-- [x] 已完成 batch32、A100 80GB、40GB 显存上限下的核心 smoke test。
-- [x] 统一 `configs/mmlsv2_paper_protocol.json` 的 `common.loss` 口径为 `ce`，并清理 M5/L1 的重复配置项（协议版本升至 `pmdfnet_mmlsv2_remote_sensing_v4_ce_only_extended_baselines`，M5 由 L1 承担）。
-- [ ] 重跑前确认正式运行集为 57 个 run（M1–M4 + M6–M11、A1/A2/A5/B2/B3/C2、L1/L2/L3 × 3 seeds），并核对 `tools/evaluation/evaluate_paper_tests.sh` 的 `EXPECTED_RUNS`。
-- [ ] 在远程环境验证 M6–M11 可构造：确认 `tu-resnet50`、`tu-hrnet_w18` 以及 `tu-hrnet_w18` 依赖的 timm 版本可用；M11 记录 `mamba_ssm` 是否可导入。
-- [ ] 补测 M6–M11 的 Params/GFLOPs/显存，并确认 M11 在 batch32 下的可行性。
-- [ ] 完成 E0 通道、单位、归一化、映射、哈希和场景/相邻切片泄漏审计。
-- [ ] A5 保留"近似容量对照"表述，并在重跑后明确容量解释。
-- [ ] B4 未执行，需在论文中说明。
-- [ ] 完成统一的 GFLOPs、FPS、latency 与统计置信区间。
-- [ ] 完成预注册 Test 可视化、FP/FN 误差分析和 E5 鲁棒性实验。
-- [ ] 清理/重跑 dirty run，并冻结最终 commit、配置和数据版本。
-- [ ] 论文中明确 converted MMLSv2、公开标注 Test 与原比赛隐藏榜单的边界。
-
-## 结论（当前阶段）
-
-当前论文主模型定义为 PMDFNet-Small + CE-only（L1），已完成的损失函数消融显示 CE-only 优于 Dice-only 与 CE + Dice。除 L1/L2/L3 外，本文档全部结果表已重置。E1 主表现包含 M1–M11 共 10 个对比基线：M1–M4 的旧结果使用 combined loss，M6–M11（UPerNet、FPN、MANet、U-Net++、OCRNet+HRNet18、M3LSNet）为新增基线且尚未训练，A1/A2/A5/B2/B3/C2 的旧结果同属旧协议，均不能作为当前结果。因此目前不对双流结构、容量或通道分组作任何结论。
-
-下一步应先统一协议损失口径并完成 M1–M4 与 M6–M11 的 CE-only 训练（M4 与 A5 优先），再补 A1/A2/B2/B3/C2；同时完成 E0 数据与泄漏审计、严格的 Params/GFLOPs 对齐、图像级 bootstrap/配对统计和 E5 鲁棒性实验，并将 Test 结果统一归档后，再决定是否进入 Remote Sensing 投稿稿件的最终 Results/Discussion。
+在上述工作完成前，本文档支持的是“当前 protocol v5 下的 57-run 标准 Test 结果记录”，不是最终论文的完整 Results/Discussion 定稿。
