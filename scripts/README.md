@@ -30,6 +30,8 @@
 | `run_robustness_eval.sh` | 对 M4 与 L1/M5 执行 clean + 5 个固定 Test 扰动/模态缺失条件，并保存逐图像 TP/FP/FN/TN |
 | `run_robustness_analysis.sh` | 对已完成的 robustness JSONL 做图像级 bootstrap/配对检验，并生成固定规则的失败案例与定性 PNG |
 | `run_interpretability.sh` | 对冻结的 M4 与 L1/M5 生成 Grad-CAM、CAM 对比图和 GT/Pred 原型 t-SNE |
+| `run_single_channel_ablation.sh` | 独立补充协议 S1–S4：逐个移除 Thermal、Slope、DEM、Grayscale，默认 3 seeds |
+| `run_test_diagnostics.sh` | 对冻结 checkpoint 统一计算 Boundary、逐 tile 分布、前景面积分层和预测熵不确定性 |
 
 ## 复杂度与效率测量
 
@@ -84,6 +86,20 @@ outputs_experiments/robustness/qualitative/*.png
 outputs_experiments/robustness/qualitative/qualitative_cases.json
 ```
 
+Test diagnostics 的输出为：
+
+```text
+outputs_experiments/test_diagnostics/
+  diagnostics_manifest.json
+  diagnostics_summary.json
+  diagnostics_summary.csv
+  per_tile.csv
+  per_tile_distributions.csv
+  foreground_area_stratified.csv
+  across_seed_summary.csv
+  plots/{per_tile_distributions,foreground_area_stratification,uncertainty_error_scatter}.png
+```
+
 默认固定 seed 41 的 clean Test，分别选择候选模型更好、参考模型更好、两者都困难和差异最大的案例；每类最多 5 张，去重后渲染 `RGB | GT | M4 | L1/M5 | FP/FN`。这组图用于解释性分析，不替代全 Test 的统计结果。
 
 ## CAM 与原型 t-SNE
@@ -107,6 +123,33 @@ outputs_experiments/interpretability/
 ```
 
 CAM 默认使用前景类的 `gt_mask` 作为 Grad-CAM 目标，样本由固定 `20261018` seed 抽取；t-SNE 每张图像/类别/GT 或 Pred 区域保留一个特征均值原型。两者都是描述性解释工具，不能替代全 Test 指标、bootstrap 或配对检验。CAM 图中红色/黄色表示较高的正激活，FP/FN 图中红色为 FP、蓝色为 FN、灰色为 TP。
+
+## 单通道移除补充消融
+
+`configs/mmlsv2_single_channel_protocol.json` 是独立于正式 57-run 矩阵的补充协议，包含 S1–S4
+（分别移除 Thermal、Slope、DEM、Grayscale），默认使用 `41 42 43` 三个 seed，共 12 个训练 run：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  bash scripts/run_single_channel_ablation.sh
+```
+
+可用 `SINGLE_CHANNEL_EXPERIMENTS=S3` 或 `SINGLE_CHANNEL_SEEDS="41 42"` 做预先指定的子集运行。
+这些结果要与正式主表分开报告。
+
+## Boundary、逐 tile、面积分层与不确定性
+
+冻结 checkpoint 后运行：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  DIAGNOSTIC_IDS=M4,L1 DIAGNOSTIC_SEEDS="41 42 43" \
+  bash scripts/run_test_diagnostics.sh
+```
+
+默认 Boundary 容差为 2 像素，输出每 tile 的混淆计数、区域/Boundary 指标、GT 前景面积分层、
+二分类预测熵及熵—错误率相关性；结果写入 `outputs_experiments/test_diagnostics/`。若分析补充
+单通道模型，需同时设置 `DIAGNOSTIC_CONFIG`、`DIAGNOSTIC_RUN_ROOT` 和 `DIAGNOSTIC_IDS`。
 
 ## M11 与可复现性记录
 

@@ -73,10 +73,10 @@ DEFAULTS = {
 
 
 # Experiment groups accepted by the training entry points. ``core``, ``ablations``
-# and ``extended`` are disjoint and stored per experiment in the protocol, so
-# running the three groups covers every experiment exactly once (19 x 3 = 57
-# runs). Keep this tuple in sync with the protocol's ``groups`` list.
-EXPERIMENT_GROUPS = ("core", "ablations", "extended", "all")
+# and ``extended`` are the disjoint formal groups (19 x 3 = 57 runs);
+# ``single_channel`` is a separate supplementary protocol group and is not part
+# of the formal 57-run count. Keep this tuple in sync with supported protocols.
+EXPERIMENT_GROUPS = ("core", "ablations", "extended", "single_channel", "all")
 
 
 def experiment_in_group(experiment, group):

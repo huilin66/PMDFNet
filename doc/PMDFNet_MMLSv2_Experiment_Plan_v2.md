@@ -11,7 +11,7 @@
 > **实验范围**：仅包含 MMLSv2；Landslide4Sense 另立计划。  
 > **状态**：以 `configs/mmlsv2_paper_protocol.json`（`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`）和当前 `scripts/`、`tools/evaluation/` 实现为执行蓝本；参数、样本映射与预训练来源须经 E0/实现核验后最终冻结。
 
-> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。新增的 E7 CAM/原型 t-SNE 代码已完成本地静态验证，但本轮尚未在 A100 执行，不能把它们写成已完成结果。
+> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。E7 CAM/原型 t-SNE 已在 A100 上完成 M4 与 L1/M5、seed 41 的冻结 Test 分析并归档；本次新增的单通道训练协议和 Test 诊断代码已完成实现与静态验证，但尚未在 A100 执行，不能把它们写成已完成结果。
 
 ## 0. 研究问题、边界与待验证主张
 
@@ -184,6 +184,30 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 ---
 
+### E3.1 单通道移除补充消融【补充协议，不并入 57 个正式 run】
+
+为补充回答“每个输入波段是否真正有贡献”，新增独立协议
+`configs/mmlsv2_single_channel_protocol.json`。它沿用 PMDFNet-Small、Add Fusion、CE-only、
+batch size `32`、`41/42/43` seeds 和正式训练流程，只在对应语义分支中移除一个源波段：
+
+| ID | 移除波段 | Stream 1 | Stream 2 |
+|---|---|---|---|
+| S1 | Thermal | Slope + DEM | Grayscale + RGB |
+| S2 | Slope | Thermal + DEM | Grayscale + RGB |
+| S3 | DEM | Thermal + Slope | Grayscale + RGB |
+| S4 | Grayscale | Thermal + Slope + DEM | RGB |
+
+训练入口为 `scripts/run_single_channel_ablation.sh`，共 `4 × 3 = 12` 个补充 run。
+这 12 个 run 不改变 protocol v5 的 57-run 主矩阵，不得在主表中隐式替换 B1/L1；应作为
+Supplementary Table 单独报告，并同时给出 Params/GFLOPs，避免把去掉波段后的容量变化误解为
+纯输入贡献。输入 TIFF 仍按固定 7 通道读取，具体波段是否进入模型由 `channels1/channels2`
+显式控制。
+
+**交付**：Supplementary Table S2，单通道移除的 Test mIoU、Foreground IoU、F1、Boundary F1
+和复杂度；必要时附逐 seed 结果。
+
+---
+
 ## E4. 融合与损失消融【当前 protocol v5 已纳入正式矩阵】
 
 | ID | 只改变的变量 | 配置 | 复用 |
@@ -288,6 +312,45 @@ DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
 
 ---
 
+### E7.2 Boundary、逐 tile 分布、前景面积分层与不确定性【建议，冻结后执行】
+
+这些分析统一由 `tools/evaluation/evaluate_test_diagnostics.py` 完成，入口为
+`scripts/run_test_diagnostics.sh`。它只读取冻结 run 的 `config.json` 与 `best.pth`，重新在带公开
+mask 的 Test split 推理，不改写各 run 的主 `test_metrics.json`，也不重新选择 checkpoint。
+
+- **Boundary 指标**：将二值 mask 定义为 `Dilate3x3(mask) - Erode3x3(mask)` 的一像素轮廓；默认
+  允许 2 像素匹配容差，分别计算 Boundary Precision、Recall、F1 和 tolerance-dilated contour
+  band IoU。输出全 Test pooled 结果和逐 tile 结果，并明确它们不等同于区域 IoU。
+- **每 tile 分布**：保存每张 Test tile 的 TP/FP/FN/TN、mIoU、Foreground IoU、F1、错误率、
+  Boundary F1/IoU 和分布统计（均值、标准差、中位数、四分位数）。这用于展示性能离散程度，
+  不能用少数 tile 替代全测试集指标。
+- **前景面积分层**：按 GT 前景面积比例排序，文件名作为平局 tie-break，再用固定的等数量切分
+  形成 small/medium/large 三组。133 张 Test tile 将得到 45/44/44 张的确定性分组；每组同时
+  报告区域指标、Boundary 指标和样本数，不能按模型优劣事后调整分界。
+- **不确定性**：二分类 softmax 前景概率计算 binary predictive entropy（自然对数，单位 nats），
+  保存每 tile 的平均熵、错误像素上的平均熵及 95 分位数，并计算熵与 tile 错误率的 Pearson
+  相关。无错误像素的 tile 不参与“错误像素平均熵”相关分析；相关性是描述性证据，不是校准
+  或因果证明。
+
+默认分析 M4 与 L1/M5 的 `41/42/43` 三个 seed；单通道 S1–S4 完成训练后，可用同一脚本将
+`DIAGNOSTIC_CONFIG`、`DIAGNOSTIC_RUN_ROOT` 和 `DIAGNOSTIC_IDS` 切换到补充协议。输出目录为
+`outputs_experiments/test_diagnostics/`，包括 `diagnostics_manifest.json`、
+`diagnostics_summary.{json,csv}`、`per_tile.csv`、`foreground_area_stratified.csv`、
+`per_tile_distributions.csv`、`across_seed_summary.csv` 和三张诊断图。
+
+**执行入口示例**：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  DIAGNOSTIC_IDS=M4,L1 DIAGNOSTIC_SEEDS="41 42 43" \
+  bash scripts/run_test_diagnostics.sh
+```
+
+**交付**：Supplementary Table S3（Boundary 与面积分层）、Figure 6（逐 tile/面积分层分布）和
+Figure 7（熵—错误率关系）；正文只在统计口径和样本量清楚时引用这些补充结果。
+
+---
+
 ## 2. 当前正式实验矩阵（protocol v5）
 
 当前配置将正式训练矩阵拆成互斥的三个 group，共 19 个协议运行项、3 个 seed、57 个 run。`M5` 是论文显示 ID，实际协议运行项为 `L1`；`A3/A4/B1/C1` 是对 `M4/L1` 的显示别名，不重复训练。
@@ -298,6 +361,17 @@ DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
 | ablations | A1、A2、A5、B2、B3、C2、L1、L2、L3 | 9 × 3 = 27 | `scripts/run_ablations.sh` |
 | extended | M6、M7、M8、M9、M10、M11 | 6 × 3 = 18 | `scripts/run_extended.sh` |
 | 合计 | 19 个协议运行项 | **57** | 三组全部执行 |
+
+### 2.1 补充协议（不计入正式 57-run 主矩阵）
+
+| 分组 | 协议文件 | 训练项 | run 数量 | 启动入口 |
+|---|---|---|---:|---|
+| single_channel | `configs/mmlsv2_single_channel_protocol.json` | S1、S2、S3、S4 | **4 × 3 = 12** | `scripts/run_single_channel_ablation.sh` |
+| Test diagnostics | 无新增训练 | M4/L1（可扩展至 S1–S4） | 冻结 checkpoint 推理 | `scripts/run_test_diagnostics.sh` |
+
+补充协议有自己的 output root、summary.csv 和 protocol version。它们用于回答更细的波段贡献、
+边界质量、性能分布、前景面积敏感性和预测不确定性问题，不能与正式 57 个 run 混合计数，也
+不能在看到 Test 结果后临时增加或删除某个 S1–S4 条目。
 
 其中：
 
@@ -338,15 +412,18 @@ DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
 
 7. 核实 B2/B3、C2、L2/L3 与 L1/M5 的单变量比较；B4 不属于当前 protocol v5。
 8. 运行 `scripts/run_complexity_eval.sh` 完成 Params、GFLOPs、FPS/latency 和峰值推理显存测量；`run_vram_smoke.sh` 仍只作显存/建模探针。
-9. 核实双流、模态划分、损失和参数效率方面的结论是否成立。
+9. 如纳入波段贡献补充，运行 `scripts/run_single_channel_ablation.sh` 完成 S1–S4 × `41/42/43`；
+   这组训练必须在最终 Test 评价前预先冻结，不得由 Test 结果反向选择波段。
+10. 核实双流、模态划分、损失、单通道贡献和参数效率方面的结论是否成立。
 
 ### Phase 3：冻结后最终测试与写作
 
-10. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
-11. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
-12. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
-13. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M4 vs L1/M5 的 CAM 对比和 GT/Pred 原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed 和数据 split。
-14. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果，也不得把 CAM/t-SNE 的描述性结果写成因果或显著性证据。
+11. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
+12. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
+13. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
+14. 运行 `scripts/run_test_diagnostics.sh`，生成 M4/L1 的 Boundary、逐 tile、前景面积分层和熵不确定性结果；若 S1–S4 已完成，则用补充协议分别评价其冻结 checkpoint。
+15. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M4 vs L1/M5 的 CAM 对比和 GT/Pred 原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed 和数据 split。
+16. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果，也不得把 CAM/t-SNE、Boundary 或熵相关性的描述性结果写成因果或显著性证据。
 
 > **注意**：理想流程是先在 Validation 完成各配置、checkpoint、阈值和实验矩阵的冻结，然后一次性评价 Test。不能完成一次 Test 后再决定是否增加某个更可能获胜的分组或改主模型。
 
@@ -368,6 +445,10 @@ DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
 | Figure 3 | 扰动等级—性能变化 | 建议 |
 | Figure 4 | 错误统计和失败案例 | 建议 |
 | Figure 5 | M4 vs M5/L1 的 CAM 与 FP/FN 同图比较 | 建议 |
+| Figure 6 | 逐 tile 指标分布与 small/medium/large 前景面积分层 | 建议 |
+| Figure 7 | 预测熵与 tile 错误率关系 | 建议 |
+| Supplementary Table S2 | S1–S4 单通道移除消融（逐 seed 与复杂度） | 建议 |
+| Supplementary Table S3 | Boundary 指标、逐 tile 分布、前景面积分层与不确定性摘要 | 建议 |
 | Supplementary | 映射 manifest、详细实现、单 seed 结果 | 建议 |
 | Supplementary | GT/Pred 特征原型 t-SNE、CAM 全部样本与 metadata | 建议 |
 
@@ -401,6 +482,13 @@ outputs_experiments/complexity/
   complexity_results.json
   complexity_results.csv
 
+outputs_experiments/pmdfnet_mmlsv2_single_channel/
+  {S1,S2,S3,S4}_..._s{41,42,43}_{timestamp}/
+    config.json
+    checkpoints/best.pth
+    test_metrics.json
+  summary.csv
+
 outputs_experiments/robustness/
   robustness_results.json
   robustness_results.csv
@@ -425,6 +513,19 @@ outputs_experiments/interpretability/
     prototypes.csv
     tsne_coordinates.csv
     tsne_{all,gt,pred}.png
+
+outputs_experiments/test_diagnostics/
+  diagnostics_manifest.json
+  diagnostics_summary.json
+  diagnostics_summary.csv
+  per_tile.csv
+  per_tile_distributions.csv
+  foreground_area_stratified.csv
+  across_seed_summary.csv
+  plots/
+    per_tile_distributions.png
+    foreground_area_stratification.png
+    uncertainty_error_scatter.png
 ```
 
 当前训练协议源文件是 `configs/mmlsv2_paper_protocol.json`；运行目录由训练器自动记录配置、命令、Git、可复现性、运行时、checkpoint 和指标。正式 Test 评估写入各 run 目录的 `test_metrics.json` 和 `results.json`。如用于公开复现，至少提供数据处理脚本、训练/评估脚本、主模型配置和运行命令。对于不能公开再分发的数据，提供合法下载途径和确定性转换步骤。
@@ -440,11 +541,13 @@ outputs_experiments/interpretability/
 - [ ] 已记录 batch size `32`、`drop_last=True`、CE-only 主损失，以及 L2/L3 的损失覆盖。
 - [ ] 已记录 M6 因 UPerNet CUDA 反向算子限制而使用 `deterministic=false`，不得将 M6 描述为逐位可复现。
 - [ ] 已记录 Train/Val 使用 Train 统计量、公开 Test 评估使用 MARS Test 统计量的当前实现口径。
+- [ ] 已按独立 `single_channel` 协议完成 S1–S4 × `41/42/43`，并将其与 57-run 主矩阵分开归档。
 - [x] 扰动类型和强度在 Validation 确定，最终 Test 不参与修改方案。
 - [x] Test 定性样本按固定 seed、固定规则和双向案例类别选择；失败案例不只展示单方面有利样本。
 - [x] 已运行并归档 `run_complexity_eval.sh` 的 Params/GFLOPs/FPS/latency/显存结果。
 - [x] 已运行并归档 E5 的 clean/扰动指标、图像级 bootstrap/配对检验以及 FP/FN 定性 PNG。
-- [ ] 已在冻结 Test 样本规则下运行并归档 CAM 对比图、GT/Pred 原型 t-SNE 及其 manifest；未把解释性图误写成显著性或因果证据。
+- [x] 已在冻结 Test 样本规则下运行并归档 M4/L1 seed 41 的 CAM 对比图、GT/Pred 原型 t-SNE 及其 manifest；未把解释性图误写成显著性或因果证据。
+- [ ] 已运行并归档 Boundary 指标、逐 tile 分布、前景面积分层和熵不确定性分析；已固定 2 像素 Boundary 容差和 3 组面积分层规则。
 - [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
 - [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。
 - [ ] 不将 TTA、Ensemble、测试集校正和模型主体效果混为一谈。

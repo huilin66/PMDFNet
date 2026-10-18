@@ -1,0 +1,113 @@
+{
+  "project_name": "PMDFNet",
+  "project_full_name": "Physically Motivated Dual-Stream Fusion for Multimodal Landslide Segmentation",
+  "protocol_version": "pmdfnet_mmlsv2_single_channel_supplement_v1",
+  "description": "Supplementary single-channel removal ablation. It keeps the frozen PMDFNet-Small CE-only training settings and removes one source band from its semantic stream at a time. These runs are separate from the 57-run formal matrix and must not be silently added to the main tables.",
+  "seeds": [
+    41,
+    42,
+    43
+  ],
+  "groups": [
+    "single_channel"
+  ],
+  "common": {
+    "data_root": "",
+    "train_split": "train",
+    "val_split": "val",
+    "split_file": "",
+    "fold": -1,
+    "output_dir": "outputs_experiments/pmdfnet_mmlsv2_single_channel",
+    "summary_csv": "outputs_experiments/pmdfnet_mmlsv2_single_channel/summary.csv",
+    "model_name": "custom",
+    "arch": "pmdfnet",
+    "encoder": "tu-convnext_small",
+    "pretrain": true,
+    "channels1": "0,1,2",
+    "channels2": "3,4,5,6",
+    "fusion": "add",
+    "in_channels": 7,
+    "input_channels": "0,1,2,3,4,5,6",
+    "num_classes": 2,
+    "input_size": 128,
+    "batch_size": 32,
+    "max_train_samples": 0,
+    "max_val_samples": 0,
+    "epochs": 100,
+    "lr": 0.0001,
+    "weight_decay": 0.0005,
+    "optimizer": "adamw",
+    "scheduler": "cosine",
+    "loss": "ce",
+    "ignore_index": 255,
+    "augmentation": "mars",
+    "aug_prob": 0.5,
+    "mosaic_prob": 0.5,
+    "num_workers": 4,
+    "device": "cuda:0",
+    "mixed_precision": false,
+    "deterministic": true,
+    "resume": "",
+    "init_checkpoint": "",
+    "val_interval": 1,
+    "save_interval": 1,
+    "primary_metric": "miou",
+    "early_stopping_patience": 0,
+    "min_delta": 0.0,
+    "normalization": "train",
+    "dataset_type": "mars_ls",
+    "use_file_list_dataset": true,
+    "save_auxiliary_checkpoints": false,
+    "finalize_results": false,
+    "final_output_dir": "",
+    "dry_run": false,
+    "skip_model_init": false
+  },
+  "channel_order": {
+    "0": "Thermal",
+    "1": "Slope",
+    "2": "DEM",
+    "3": "Grayscale",
+    "4": "R",
+    "5": "G",
+    "6": "B"
+  },
+  "experiments": [
+    {
+      "id": "S1",
+      "group": "single_channel",
+      "paper_id": "S1",
+      "experiment_name": "S1_without_thermal_ce",
+      "channels1": "1,2",
+      "channels2": "3,4,5,6",
+      "notes": "Remove Thermal (channel 0) from the physical stream; the input tensor still contains all source channels so the omission is explicit in the PMDFNet branch selector."
+    },
+    {
+      "id": "S2",
+      "group": "single_channel",
+      "paper_id": "S2",
+      "experiment_name": "S2_without_slope_ce",
+      "channels1": "0,2",
+      "channels2": "3,4,5,6",
+      "notes": "Remove Slope (channel 1) from the physical stream."
+    },
+    {
+      "id": "S3",
+      "group": "single_channel",
+      "paper_id": "S3",
+      "experiment_name": "S3_without_dem_ce",
+      "channels1": "0,1",
+      "channels2": "3,4,5,6",
+      "notes": "Remove DEM (channel 2) from the physical stream."
+    },
+    {
+      "id": "S4",
+      "group": "single_channel",
+      "paper_id": "S4",
+      "experiment_name": "S4_without_grayscale_ce",
+      "channels1": "0,1,2",
+      "channels2": "4,5,6",
+      "notes": "Remove Grayscale (channel 3) from the optical stream."
+    }
+  ]
+}
