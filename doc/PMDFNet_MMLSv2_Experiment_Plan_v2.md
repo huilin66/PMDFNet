@@ -11,7 +11,7 @@
 > **实验范围**：仅包含 MMLSv2；Landslide4Sense 另立计划。  
 > **状态**：以 `configs/mmlsv2_paper_protocol.json`（`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`）和当前 `scripts/`、`tools/evaluation/` 实现为执行蓝本；参数、样本映射与预训练来源须经 E0/实现核验后最终冻结。
 
-> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。
+> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。新增的 E7 CAM/原型 t-SNE 代码已完成本地静态验证，但本轮尚未在 A100 执行，不能把它们写成已完成结果。
 
 ## 0. 研究问题、边界与待验证主张
 
@@ -260,6 +260,32 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 **交付**：`Figure 2. Qualitative comparison`、`Figure 4. Failure analysis`。
 
+### E7.1 CAM 与原型 t-SNE 解释性分析【建议，冻结后执行】
+
+为复现 MRSN 中“激活区域 + 特征原型”这一类机制分析，本项目采用与 PMDFNet 结构一致的 PyTorch 实现，不直接移植 Paddle 模型代码：
+
+- `tools/evaluation/cam_analysis.py`：从正式 run 的 `config.json` 和 `best.pth` 重建模型，在指定 decoder feature layer 上计算 Grad-CAM；默认使用 Test 的 `gt_mask`、前景类 `class_id=1`，同时保存 `RGB | GT | Pred | CAM overlay | FP/FN`、CAM target mask、灰度 CAM 和逐图像 metadata。
+- `tools/evaluation/tsne_prototype_analysis.py`：对同一批固定 Test 图像提取每个模型的 GT/Pred 区域特征原型，每张图像、每个类别、每个来源各保留一个区域均值向量；联合执行维度对齐、标准化和 t-SNE，分别输出 `tsne_gt.png`、`tsne_pred.png` 和合并图。
+- `tools/evaluation/make_cam_comparison_figure.py`：只负责读取已经生成的 CAM 目录并排版，不重新推理；保证图像选择和模型输出不会因排版过程改变。
+- `scripts/run_interpretability.sh`：默认对 seed 41 的 M4 与 L1/M5 执行上述分析；输出目录为 `outputs_experiments/interpretability/`。如需扩展到更多模型或 seed，通过环境变量显式指定。
+
+固定规则如下：
+
+1. Test 图像默认由 `selection_seed=20261018` 从排序后的公开 Test 文件名中抽取，模型之间共享同一组图像；不按 Test 分数挑选 CAM 或 t-SNE 样本。若使用 `lowest_miou`/`highest_miou`，必须标记为探索性分析，不能作为正文无偏例图的选择依据。
+2. CAM 的 `gt_mask` 仅用于定位解释区域，不改变预测和评价指标；空目标区域自动回退到整幅图，并在 metadata 中记录。
+3. t-SNE 的 GT/Pred 原型来自同一图像和同一类别的空间特征均值。t-SNE 是描述性可视化，不作为显著性检验；类别、模型 marker、特征层、PCA 对齐和随机种子必须随 manifest 一起保存。
+4. 正文优先展示 M4 与 L1/M5 的同图 CAM/FP-FN 对比；M1–M3、M6–M11 的 CAM 和 t-SNE 作为补充材料或机制讨论证据。不能仅凭 CAM 热区声称模型“学习了物理因果关系”，只能描述其关注区域与错误模式的关联。
+
+**执行入口示例**：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  INTERP_IDS=M4,L1 INTERP_SEED=41 INTERP_SPLIT=test \
+  bash scripts/run_interpretability.sh
+```
+
+**交付**：正文可使用的 CAM 对比图和补充材料 t-SNE 图；原始 `cam_manifest.json`、`cam_meta.csv`、`tsne_manifest.json`、`prototypes.csv` 与 `tsne_coordinates.csv` 必须归档。
+
 ---
 
 ## 2. 当前正式实验矩阵（protocol v5）
@@ -319,7 +345,8 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 10. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
 11. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
 12. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
-13. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果。
+13. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M4 vs L1/M5 的 CAM 对比和 GT/Pred 原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed 和数据 split。
+14. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果，也不得把 CAM/t-SNE 的描述性结果写成因果或显著性证据。
 
 > **注意**：理想流程是先在 Validation 完成各配置、checkpoint、阈值和实验矩阵的冻结，然后一次性评价 Test。不能完成一次 Test 后再决定是否增加某个更可能获胜的分组或改主模型。
 
@@ -340,7 +367,9 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 | Figure 2 | 固定选择规则下的可视化比较 | 必须 |
 | Figure 3 | 扰动等级—性能变化 | 建议 |
 | Figure 4 | 错误统计和失败案例 | 建议 |
+| Figure 5 | M4 vs M5/L1 的 CAM 与 FP/FN 同图比较 | 建议 |
 | Supplementary | 映射 manifest、详细实现、单 seed 结果 | 建议 |
+| Supplementary | GT/Pred 特征原型 t-SNE、CAM 全部样本与 metadata | 建议 |
 
 ---
 
@@ -384,6 +413,18 @@ outputs_experiments/robustness/
   qualitative/
     qualitative_cases.json
     *.png
+
+outputs_experiments/interpretability/
+  cam/{M4,L1}_s41/
+    cam_manifest.json
+    cam_meta.csv
+    samples/rank_*/{rgb,gt,pred,cam_overlay,cam_gray,fp_fn}.png
+  cam/cam_comparison_s41.png
+  tsne/M4,L1_s41/
+    tsne_manifest.json
+    prototypes.csv
+    tsne_coordinates.csv
+    tsne_{all,gt,pred}.png
 ```
 
 当前训练协议源文件是 `configs/mmlsv2_paper_protocol.json`；运行目录由训练器自动记录配置、命令、Git、可复现性、运行时、checkpoint 和指标。正式 Test 评估写入各 run 目录的 `test_metrics.json` 和 `results.json`。如用于公开复现，至少提供数据处理脚本、训练/评估脚本、主模型配置和运行命令。对于不能公开再分发的数据，提供合法下载途径和确定性转换步骤。
@@ -403,6 +444,7 @@ outputs_experiments/robustness/
 - [x] Test 定性样本按固定 seed、固定规则和双向案例类别选择；失败案例不只展示单方面有利样本。
 - [x] 已运行并归档 `run_complexity_eval.sh` 的 Params/GFLOPs/FPS/latency/显存结果。
 - [x] 已运行并归档 E5 的 clean/扰动指标、图像级 bootstrap/配对检验以及 FP/FN 定性 PNG。
+- [ ] 已在冻结 Test 样本规则下运行并归档 CAM 对比图、GT/Pred 原型 t-SNE 及其 manifest；未把解释性图误写成显著性或因果证据。
 - [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
 - [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。
 - [ ] 不将 TTA、Ensemble、测试集校正和模型主体效果混为一谈。

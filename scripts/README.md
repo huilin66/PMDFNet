@@ -29,6 +29,7 @@
 | `run_complexity_eval.sh` | 对冻结的主基线统一测量 Params、GFLOPs、前向延迟/FPS 和峰值推理显存 |
 | `run_robustness_eval.sh` | 对 M4 与 L1/M5 执行 clean + 5 个固定 Test 扰动/模态缺失条件，并保存逐图像 TP/FP/FN/TN |
 | `run_robustness_analysis.sh` | 对已完成的 robustness JSONL 做图像级 bootstrap/配对检验，并生成固定规则的失败案例与定性 PNG |
+| `run_interpretability.sh` | 对冻结的 M4 与 L1/M5 生成 Grad-CAM、CAM 对比图和 GT/Pred 原型 t-SNE |
 
 ## 复杂度与效率测量
 
@@ -84,6 +85,28 @@ outputs_experiments/robustness/qualitative/qualitative_cases.json
 ```
 
 默认固定 seed 41 的 clean Test，分别选择候选模型更好、参考模型更好、两者都困难和差异最大的案例；每类最多 5 张，去重后渲染 `RGB | GT | M4 | L1/M5 | FP/FN`。这组图用于解释性分析，不替代全 Test 的统计结果。
+
+## CAM 与原型 t-SNE
+
+`run_interpretability.sh` 使用正式 run 的 `config.json` 与 `best.pth`，不会重新训练，也不会根据 Test 指标选择 checkpoint。默认对 M4 与 L1（论文 M5）seed 41 的公开 Test 执行：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  INTERP_IDS=M4,L1 INTERP_SEED=41 INTERP_SPLIT=test \
+  bash scripts/run_interpretability.sh
+```
+
+输出包括：
+
+```text
+outputs_experiments/interpretability/
+  cam/{M4,L1}_s41/cam_manifest.json
+  cam/{M4,L1}_s41/cam_meta.csv
+  cam/cam_comparison_s41.png
+  tsne/M4,L1_s41/{tsne_manifest.json,prototypes.csv,tsne_coordinates.csv,tsne_all.png,tsne_gt.png,tsne_pred.png}
+```
+
+CAM 默认使用前景类的 `gt_mask` 作为 Grad-CAM 目标，样本由固定 `20261018` seed 抽取；t-SNE 每张图像/类别/GT 或 Pred 区域保留一个特征均值原型。两者都是描述性解释工具，不能替代全 Test 指标、bootstrap 或配对检验。CAM 图中红色/黄色表示较高的正激活，FP/FN 图中红色为 FP、蓝色为 FN、灰色为 TP。
 
 ## M11 与可复现性记录
 
