@@ -16,7 +16,7 @@
 - 原始通道分组 L1 为 `0.8594`，B2 为 `0.8520`，B3 为 `0.8460`；当前结果支持“本轮原始分组表现最好”的描述，但尚未完成显著性检验。
 - Add Fusion 的 L1 为 `0.8594`，Concat Fusion 的 C2 为 `0.8462`；在当前训练协议下 Add 表现更好。
 - CE-only（L1）高于 CE + Dice（L3，`0.8534`）和 Dice-only（L2，`0.8323`）。这只是同一架构、同一数据划分下的描述性结果。
-- 当前尚未在 A100 执行图像级 bootstrap/配对检验、复杂度正式测量、定性可视化和 E5 受控扰动实验，因此不把上述差异写成统计显著或鲁棒性结论。对应代码已经补充：`scripts/run_complexity_eval.sh` 和 `scripts/run_robustness_eval.sh`；本文件在实际输出生成前不填入推测数值。
+- E5 受控扰动、图像级 bootstrap/配对检验以及固定规则的 Test 定性/FP-FN 案例分析已在 A100 上完成；这些结果支持当前 M4 vs. L1/M5 的配对比较，但不替代跨 seed 的训练随机性汇总，也未对全部消融组合做成对检验。
 
 ## 2. 数据、映射与评价边界
 
@@ -137,7 +137,7 @@ M6/UPerNet 因当前 CUDA `adaptive_avg_pool2d` 反向传播没有确定性实�
 | B2 | RGB vs. 物理 + Grayscale | 0.8520 ± 0.0033 | 0.8066 ± 0.0049 | 0.8974 ± 0.0017 | 0.8929 ± 0.0030 |
 | B3 | Thermal + DEM + Grayscale vs. Slope + RGB | 0.8460 ± 0.0199 | 0.7973 ± 0.0286 | 0.8948 ± 0.0112 | 0.8870 ± 0.0178 |
 
-A5 是近似容量对照，不是严格参数量匹配；正式 Params/GFLOPs 结果完成前，不能将 A5 差异完全归因于模态解耦。
+A5 是近似容量对照，不是严格参数量匹配；Params/GFLOPs/延迟/FPS/峰值推理显存已统一测量，见第 8 节，但仍不能将 A5 差异完全归因于模态解耦。
 
 ### 6.2 Fusion 与损失
 
@@ -173,7 +173,40 @@ A5 是近似容量对照，不是严格参数量匹配；正式 Params/GFLOPs �
 | L2 | 0.8857 ± 0.0197 | 0.8697 ± 0.0317 |
 | L3 | 0.8964 ± 0.0069 | 0.8921 ± 0.0166 |
 
-## 8. 每个 seed 的 Test mIoU
+## 8. 统一复杂度与效率测量
+
+测量使用各正式 run 的 `best.pth`，输入为 `1×7×128×128`，设备为 NVIDIA A100 80GB PCIe，`eval + inference_mode`，warm-up 20 次，计时 100 次，前向同步计时。GFLOPs 使用 `torch.profiler` 的支持算子统计；峰值显存为推理阶段 CUDA allocated/reserved，不是训练反向传播峰值。
+
+| ID | Params (M) | GFLOPs | 延迟 (ms/image) | FPS | 峰值推理显存 allocated (GiB) | 峰值推理显存 reserved (GiB) |
+|---|---:|---:|---:|---:|---:|---:|
+| M1 | 32.5338 | 5.4238 | 6.6597 | 150.16 | 0.1540 | 0.1797 |
+| M2 | 26.6904 | 4.6744 | 8.6000 | 116.28 | 0.1160 | 0.1230 |
+| M3 | 24.7352 | 2.7030 | 25.5113 | 39.20 | 0.1359 | 0.1465 |
+| M4 | 50.0921 | 6.3177 | 14.3013 | 69.92 | 0.2306 | 0.2656 |
+| **M5 = L1** | **99.5407** | **11.9812** | **28.6428** | **34.91** | **0.4175** | **0.4688** |
+| M6 | 37.2975 | 9.7044 | 7.0759 | 141.33 | 0.2351 | 0.2637 |
+| M7 | 26.1287 | 3.9965 | 6.4304 | 155.51 | 0.1431 | 0.1582 |
+| M8 | 147.4527 | 9.3941 | 8.7927 | 113.73 | 0.7281 | 0.7598 |
+| M9 | 48.9984 | 28.8280 | 8.0349 | 124.46 | 0.2523 | 0.3145 |
+| M10 | 13.0181 | 51.5493 | 35.6207 | 28.07 | 0.3500 | 0.3906 |
+| M11 | 9.1204 | 16.6363 | 11.6522 | 85.82 | 0.1202 | 0.1582 |
+
+M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中的自动元数据导入提示失败，但已通过独立模块探针确认，Params/GFLOPs/速度/显存数值不受影响。原始机器可复核文件为 `outputs_experiments/complexity/complexity_results.json` 和 `.csv`。
+
+## 9. E5 受控扰动、配对统计与定性分析
+
+这些补充实验不直接并入主结果表；正文只保留实验范围、完成状态和结果索引，详细数值与图像保存在以下文件中。
+
+| 补充实验 | 状态 | 简介与结果路径 |
+|---|---|---|
+| E5 受控扰动与模态缺失 | 已完成 | M4 vs L1/M5，3 个 seed，clean + 五类条件，共 72 条记录；原始汇总见 [`robustness_results.json`](../outputs_experiments/robustness/robustness_results.json) / [`robustness_results.csv`](../outputs_experiments/robustness/robustness_results.csv)，逐图像 TP/FP/FN/TN 见 [`robustness_per_image.jsonl`](../outputs_experiments/robustness/robustness_per_image.jsonl)。 |
+| 图像级 bootstrap 与配对检验 | 已完成 | 按相同 seed、条件和 Test 图像配对，执行 10,000 次 bootstrap 与 10,000 次 sign-flip 检验；详细结果见 [`robustness_paired_stats.json`](../outputs_experiments/robustness/analysis/robustness_paired_stats.json) / [`robustness_paired_stats.csv`](../outputs_experiments/robustness/analysis/robustness_paired_stats.csv)。 |
+| FP/FN 与失败案例分析 | 已完成 | 固定 seed 41 的 clean Test，按双方优劣、双方困难和最大差异规则选择 14 张图；选择清单见 [`failure_cases.json`](../outputs_experiments/robustness/analysis/failure_cases.json)。 |
+| Test 定性可视化 | 已完成 | 每张图包含 RGB、GT、M4、L1/M5 预测及两者 FP/FN 图；PNG 和渲染清单见 [`qualitative_cases.json`](../outputs_experiments/robustness/qualitative/qualitative_cases.json) 及同目录文件。 |
+
+执行入口：[`run_robustness_eval.sh`](../scripts/run_robustness_eval.sh) 和 [`run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh)。固定协议：[`mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)。
+
+## 10. 每个 seed 的 Test mIoU
 
 | ID | seed 41 | seed 42 | seed 43 |
 |---|---:|---:|---:|
@@ -199,25 +232,25 @@ A5 是近似容量对照，不是严格参数量匹配；正式 Params/GFLOPs �
 
 没有删除或挑选 seed；所有 41/42/43 均纳入均值和标准差计算。
 
-## 9. 结果解读边界
+## 11. 结果解读边界
 
-### 9.1 双流与模态贡献
+### 11.1 双流与模态贡献
 
-L1/M5 比直接单流对照 M4 高 `0.0124` mIoU，A1 和 A2 均低于 L1，说明在当前协议下两类输入共同使用具有描述性收益。A5 的结果也低于 L1，但 A5 只是近似容量对照；在完成统一复杂度测量前，不能把差异单独解释为双流结构本身的因果收益。
+L1/M5 比直接单流对照 M4 高 `0.0124` mIoU，A1 和 A2 均低于 L1，说明在当前协议下两类输入共同使用具有描述性收益。A5 的结果也低于 L1，但 A5 只是近似容量对照；结合复杂度表可见 L1 参数量和计算量明显更高，因此不能把差异单独解释为双流结构本身的因果收益。
 
-### 9.2 通道分组
+### 11.2 通道分组
 
 L1/B1 的 `0.8594` 高于 B2 的 `0.8520` 和 B3 的 `0.8460`。当前结果与原始物理分组的设计动机一致，但 B3 跨 seed 波动较大，且尚未完成配对统计检验，因此结论应写成“本轮三 seed 实验中原始分组表现最好”，不写成普遍最优。
 
-### 9.3 Fusion 与损失
+### 11.3 Fusion 与损失
 
-L1 的 Add Fusion 高于 C2 的 Concat Fusion；CE-only 高于 L3 和 L2。由于这些结果来自单一固定数据划分，且复杂度测量尚未补齐，结论限于当前实现和训练预算。
+L1 的 Add Fusion 高于 C2 的 Concat Fusion；CE-only 高于 L3 和 L2。由于这些结果来自单一固定数据划分，结论限于当前实现和训练预算。
 
-### 9.4 基线比较
+### 11.4 基线比较
 
-M4 是当前最强的单流直接对照，M1/M3/M8 等其他基线低于 M4；M6、M7、M9、M10、M11 的均值也低于 L1。所有比较使用同一 Test split、相同 3 个 seed 和统一的 global-pixel 指标，但 M6 的确定性设置例外、M11 的实现路径记录仍需补充。
+M4 是当前最强的单流直接对照，M1/M3/M8 等其他基线低于 M4；M6、M7、M9、M10、M11 的均值也低于 L1。所有比较使用同一 Test split、相同 3 个 seed 和统一的 global-pixel 指标，但 M6 的确定性设置例外；复杂度表是 seed 41 的单次推理测量，不代表三 seed 的速度均值。
 
-## 10. 结果文件与复现记录
+## 12. 结果文件与复现记录
 
 每个正式 run 的目录结构包含：
 
@@ -243,23 +276,23 @@ outputs_experiments/pmdfnet_mmlsv2/
 - 评估脚本：[`scripts/run_test_eval.sh`](../scripts/run_test_eval.sh)；
 - 测试评估实现：[`tools/evaluation/evaluate_test_metrics.py`](../tools/evaluation/evaluate_test_metrics.py)。
 
-新增但尚未执行的补充评价入口：
+补充评价入口与已归档输出：
 
 - 复杂度：[`scripts/run_complexity_eval.sh`](../scripts/run_complexity_eval.sh)，实现见 [`tools/evaluation/measure_model_complexity.py`](../tools/evaluation/measure_model_complexity.py)；
-- E5 鲁棒性：[`scripts/run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)，协议见 [`configs/mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；输出逐图像 TP/FP/FN/TN 的 JSONL，可作为配对 bootstrap、统计检验和失败案例分析输入。
+- E5 鲁棒性：[`scripts/run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)，协议见 [`configs/mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；
+- 配对统计和失败案例：[`scripts/run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh)，实现见 [`tools/evaluation/analyze_robustness.py`](../tools/evaluation/analyze_robustness.py)；
+- 定性图：[`tools/evaluation/render_qualitative_cases.py`](../tools/evaluation/render_qualitative_cases.py)。
 
-所有远程运行记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`。因此这些结果应视为当前工作树快照；投稿或最终归档前应在 clean commit 下重新冻结协议并记录完整 hash。
+历史 57 个训练/Test run 的记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`，因此这些结果仍应视为 dirty 工作树快照。本文新增的复杂度、E5 鲁棒性、配对统计和定性渲染是在 A100 的当前同步 commit `f5c3374a00985749d751e17bef4120a2cc43578b` 上执行；新增分析脚本尚未提交。投稿或最终归档前仍应在 clean commit 下重新冻结协议并记录完整 hash。
 
 M11 的配置明确为 `pretrain=false`，但历史本轮结果文件没有单独记录 `mamba_ssm` selective-scan 与 fallback 实现路径。新训练的 `runtime.json`、复杂度结果和鲁棒性结果会记录该字段；历史 57 个 run 仍不能事后假定其后端。
 
-## 11. 尚未完成的工作
+## 13. 尚未完成的工作
 
 - 公开数据集的来源、引用、通道和映射规则需继续随论文材料归档；本轮不把数据泄漏、场景独立性和完整数据审计作为阻塞项；
-- 在 A100 执行 `scripts/run_complexity_eval.sh`，生成 Params、GFLOPs、FPS/latency 和峰值显存的统一正式测量；
-- 图像级 bootstrap 或配对统计检验；
-- 在 A100 执行 `scripts/run_robustness_eval.sh`，生成 E5 受控扰动、模态缺失和鲁棒性曲线的原始指标；
-- 固定规则下的 Test 定性结果、FP/FN 分析和失败案例；
-- 历史 57 个 run 的 M11 实际后端路径、M6 非确定性影响的补充记录；新训练会写入 `runtime.json`，旧结果仍需按 dirty-snapshot 归档；
+- 当前只对 M4 vs L1/M5 执行了 E5 的图像级配对统计；若论文需要对 B2/B3/C2/L2/L3 等所有消融做成对检验，需要另外指定比较集合并运行同一分析脚本；
+- 受控扰动的曲线图仍需在论文排版阶段从 `robustness_results.csv` 绘制，原始指标和定性 PNG 已归档；
+- 历史 57 个 run 的 M6 非确定性影响的补充记录；M11 当前 A100 环境已确认使用 fallback simulator，但历史 run 尚未在 `runtime.json` 中显式记录；
 - 在 clean commit 下重新冻结，或归档历史工作树的完整代码差异、未跟踪文件、环境信息和原始输出；
 - 官方隐藏 Test2 的提交或榜单结果。当前结果不能替代官方隐藏测试评价。
 

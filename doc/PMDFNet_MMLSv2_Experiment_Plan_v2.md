@@ -11,7 +11,7 @@
 > **实验范围**：仅包含 MMLSv2；Landslide4Sense 另立计划。  
 > **状态**：以 `configs/mmlsv2_paper_protocol.json`（`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`）和当前 `scripts/`、`tools/evaluation/` 实现为执行蓝本；参数、样本映射与预训练来源须经 E0/实现核验后最终冻结。
 
-> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 由 `scripts/run_robustness_eval.sh` 执行，但在实际运行前仍标记为待执行。
+> **实现对齐说明（2026-10-18）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。
 
 ## 0. 研究问题、边界与待验证主张
 
@@ -202,9 +202,9 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 ---
 
-## E5. 受控扰动及模态缺失【第二轮，代码已补充，结果待执行】
+## E5. 受控扰动及模态缺失【第二轮，已执行】
 
-当前 `scripts/run_core.sh`、`run_ablations.sh` 和 `run_extended.sh` 的 57-run 正式矩阵不包含 E5；E5 是冻结 checkpoint 后的独立 Test 评价，不重新训练。代码入口为 `scripts/run_robustness_eval.sh`，固定协议为 `configs/mmlsv2_robustness_protocol.json`，使用 JSON 而不是旧计划中尚未落地的 YAML。未执行前不得把 E5 写成已完成结果。
+当前 `scripts/run_core.sh`、`run_ablations.sh` 和 `run_extended.sh` 的 57-run 正式矩阵不包含 E5；E5 是冻结 checkpoint 后的独立 Test 评价，不重新训练。代码入口为 `scripts/run_robustness_eval.sh`，固定协议为 `configs/mmlsv2_robustness_protocol.json`，使用 JSON 而不是旧计划中尚未落地的 YAML。已在 A100 上完成 M4 vs L1/M5、3 个 seed、clean + 五类条件，共 72 条条件记录。
 
 **先 Val 确定协议，再冻结，最后 Test 一次性评价。** 不从 Test 结果决定扰动类别、等级、随机种子、选择哪张图或采用哪个模型。
 
@@ -218,7 +218,7 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 当前实现统一比较 **M4（单流 Small） vs M5（双流 Small，存储项 L1）**，保持 clean/perturbed 模型权重不变。协议预先固定三个 DEM/光学噪声等级（轻/中/重），并将偏置和噪声定义在 MARS Test normalization 之后；模态缺失将指定通道置为归一化空间的 0。记录协议中的 RNG seed，并保存 `robustness_protocol.json` 的 SHA-256。
 
-报告 clean 指标、各扰动等级指标、相对/绝对性能下降；同时输出每张 Test 图像的 TP/FP/FN/TN、mIoU 和 F1，为后续图像级 bootstrap、配对检验、定性可视化和失败案例筛选提供输入。此实验只能支持**受控扰动鲁棒性**，不能替代真实的跨区域测试。
+报告 clean 指标、各扰动等级指标、相对/绝对性能下降；同时输出每张 Test 图像的 TP/FP/FN/TN、mIoU 和 F1。已使用 `tools/evaluation/analyze_robustness.py` 对每个 seed 的 133 张 Test 图像执行配对 bootstrap 和 sign-flip 检验，并使用 `tools/evaluation/render_qualitative_cases.py` 生成固定规则的 RGB/GT/预测/FP-FN 案例图。此实验只能支持**受控扰动鲁棒性**，不能替代真实的跨区域测试。
 
 **交付**：`Table 7. Robustness under controlled perturbations`、`Figure 3. Robustness curves`。
 
@@ -256,7 +256,7 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 - 分析类型包括：明显滑坡主体、易误判背景、边界复杂、漏检、误检、两种模型都失败的情形。
 - 建议使用测试集的总体 FP/FN 统计或按图像分布分位数支撑定性讨论，不应从几个案例推导总体性能。
 
-这里的“图像级 bootstrap 或配对统计检验”不是只挑几张图展示，而是对同一 Test 图像在不同模型下的逐图像指标/误差做成配对样本：bootstrap 时对图像 ID 成对有放回重采样，配对检验时比较每张图的 mIoU、F1、FP/FN 或错误面积差。定性可视化和失败案例分析则是其中的解释性部分：按预先固定或基于总体误差分位数的规则，展示具体图像的 RGB、GT、各模型预测及 FP/FN 图；不能只展示事后最有利的图片。当前 robustness 脚本已保存这些逐图像混淆计数，尚未自动生成最终论文图和 p 值表。
+这里的“图像级 bootstrap 或配对统计检验”不是只挑几张图展示，而是对同一 Test 图像在不同模型下的逐图像指标/误差做成配对样本：bootstrap 时对图像 ID 成对有放回重采样，配对检验时比较每张图的 mIoU、F1、FP/FN 或错误面积差。当前脚本按每个 seed 的 133 张图像执行 10,000 次 bootstrap 和 10,000 次双侧 sign-flip 检验，并保存 CI、p 值和逐 seed 记录。定性可视化和失败案例分析则按预先固定的四类规则（候选模型更好、参考模型更好、双方都困难、差异最大）生成，不只展示事后最有利的图片。
 
 **交付**：`Figure 2. Qualitative comparison`、`Figure 4. Failure analysis`。
 
@@ -318,7 +318,7 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 10. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
 11. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
-12. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用预注册固定 ID/规则选择 Test 可视化；完成效率测试和多 seed 汇总。
+12. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
 13. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果。
 
 > **注意**：理想流程是先在 Validation 完成各配置、checkpoint、阈值和实验矩阵的冻结，然后一次性评价 Test。不能完成一次 Test 后再决定是否增加某个更可能获胜的分组或改主模型。
@@ -376,6 +376,14 @@ outputs_experiments/robustness/
   robustness_results.json
   robustness_results.csv
   robustness_per_image.jsonl
+  analysis/
+    robustness_paired_stats.json
+    robustness_paired_stats.csv
+    failure_cases.json
+    failure_cases.csv
+  qualitative/
+    qualitative_cases.json
+    *.png
 ```
 
 当前训练协议源文件是 `configs/mmlsv2_paper_protocol.json`；运行目录由训练器自动记录配置、命令、Git、可复现性、运行时、checkpoint 和指标。正式 Test 评估写入各 run 目录的 `test_metrics.json` 和 `results.json`。如用于公开复现，至少提供数据处理脚本、训练/评估脚本、主模型配置和运行命令。对于不能公开再分发的数据，提供合法下载途径和确定性转换步骤。
@@ -391,9 +399,10 @@ outputs_experiments/robustness/
 - [ ] 已记录 batch size `32`、`drop_last=True`、CE-only 主损失，以及 L2/L3 的损失覆盖。
 - [ ] 已记录 M6 因 UPerNet CUDA 反向算子限制而使用 `deterministic=false`，不得将 M6 描述为逐位可复现。
 - [ ] 已记录 Train/Val 使用 Train 统计量、公开 Test 评估使用 MARS Test 统计量的当前实现口径。
-- [ ] 扰动类型和强度在 Validation 确定，最终 Test 不参与修改方案。
-- [ ] Test 定性样本选择不依据模型表现。
-- [ ] 已运行并归档 `run_complexity_eval.sh` 的 Params/GFLOPs/FPS/latency/显存结果。
+- [x] 扰动类型和强度在 Validation 确定，最终 Test 不参与修改方案。
+- [x] Test 定性样本按固定 seed、固定规则和双向案例类别选择；失败案例不只展示单方面有利样本。
+- [x] 已运行并归档 `run_complexity_eval.sh` 的 Params/GFLOPs/FPS/latency/显存结果。
+- [x] 已运行并归档 E5 的 clean/扰动指标、图像级 bootstrap/配对检验以及 FP/FN 定性 PNG。
 - [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
 - [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。
 - [ ] 不将 TTA、Ensemble、测试集校正和模型主体效果混为一谈。

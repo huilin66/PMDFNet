@@ -28,6 +28,7 @@
 | `run_test_eval.sh` | 冻结后的批量 Test 评价，写入各 run 的 `test_metrics.json` |
 | `run_complexity_eval.sh` | 对冻结的主基线统一测量 Params、GFLOPs、前向延迟/FPS 和峰值推理显存 |
 | `run_robustness_eval.sh` | 对 M4 与 L1/M5 执行 clean + 5 个固定 Test 扰动/模态缺失条件，并保存逐图像 TP/FP/FN/TN |
+| `run_robustness_analysis.sh` | 对已完成的 robustness JSONL 做图像级 bootstrap/配对检验，并生成固定规则的失败案例与定性 PNG |
 
 ## 复杂度与效率测量
 
@@ -63,6 +64,26 @@ JSONL 保存每张 Test 图像的 TP、FP、FN、TN、mIoU、F1、预测前景�
 ```bash
 DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls bash scripts/run_robustness_eval.sh
 ```
+
+鲁棒性评价完成后，使用同一份 JSONL 进行不重新推理的统计和定性渲染：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  bash scripts/run_robustness_analysis.sh
+```
+
+统计单位是同一 seed 内的同一张 Test 图像；脚本按 133 张图像做 10,000 次 percentile bootstrap，并执行 10,000 次双侧 sign-flip 配对检验。输出为：
+
+```text
+outputs_experiments/robustness/analysis/robustness_paired_stats.json
+outputs_experiments/robustness/analysis/robustness_paired_stats.csv
+outputs_experiments/robustness/analysis/failure_cases.json
+outputs_experiments/robustness/analysis/failure_cases.csv
+outputs_experiments/robustness/qualitative/*.png
+outputs_experiments/robustness/qualitative/qualitative_cases.json
+```
+
+默认固定 seed 41 的 clean Test，分别选择候选模型更好、参考模型更好、两者都困难和差异最大的案例；每类最多 5 张，去重后渲染 `RGB | GT | M4 | L1/M5 | FP/FN`。这组图用于解释性分析，不替代全 Test 的统计结果。
 
 ## M11 与可复现性记录
 

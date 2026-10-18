@@ -122,7 +122,9 @@ def _m3lsnet_backend(model_name: str) -> dict:
     if str(model_name).lower() != "m3lsnet":
         return {}
     try:
-        import networks.M3LSNet as module
+        import importlib
+
+        module = importlib.import_module("networks.M3LSNet")
 
         available = module.selective_scan_fn is not None
         return {

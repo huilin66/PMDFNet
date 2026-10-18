@@ -407,7 +407,9 @@ def model_backend_metadata(cfg):
     if not model_name.startswith("m3lsnet"):
         return {"model_backend": "standard_pytorch_or_smp"}
     try:
-        import networks.M3LSNet as m3lsnet_module
+        import importlib
+
+        m3lsnet_module = importlib.import_module("networks.M3LSNet")
 
         available = m3lsnet_module.selective_scan_fn is not None
         return {
