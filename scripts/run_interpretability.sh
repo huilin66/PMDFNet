@@ -24,10 +24,11 @@ if [ -z "${DATA_ROOT:-}" ]; then
 fi
 
 # INTERP_IDS remains a backwards-compatible shorthand for the t-SNE model set.
-# The default CAM/prediction comparison uses the requested M1/M2/M3/M10/M11
-# set; use the explicit lists when the CAM and t-SNE subsets differ.
+# The default CAM/prediction comparison uses M1, M3, M10, M11 and M5
+# (PMDFNet; stored protocol run L1); use the explicit lists when the CAM and
+# t-SNE subsets differ.
 INTERP_IDS="${INTERP_IDS:-M1,M2,M3,M4,L1}"
-INTERP_CAM_IDS="${INTERP_CAM_IDS:-M1,M2,M3,M10,M11}"
+INTERP_CAM_IDS="${INTERP_CAM_IDS:-M1,M3,M10,M11,M5}"
 INTERP_TSNE_IDS="${INTERP_TSNE_IDS:-${INTERP_IDS}}"
 INTERP_SELECTION_TARGET_IDS="${INTERP_SELECTION_TARGET_IDS:-L1}"
 INTERP_SELECTION_REFERENCE_IDS="${INTERP_SELECTION_REFERENCE_IDS:-M1,M2,M3,M10,M11}"
@@ -42,7 +43,7 @@ INTERP_BACKGROUND_RATIO="${INTERP_BACKGROUND_RATIO:-0.25}"
 INTERP_TARGET_PLAN="${INTERP_TARGET_PLAN:-}"
 INTERP_CAM_TARGET="${INTERP_CAM_TARGET:-gt_mask}"
 INTERP_CAM_LAYER="${INTERP_CAM_LAYER:-auto}"
-INTERP_OUTPUT_ROOT="${INTERP_OUTPUT_ROOT:-outputs_experiments/interpretability}"
+INTERP_OUTPUT_ROOT="${INTERP_OUTPUT_ROOT:-outputs_experiments/interpretability_selected_m1_m3_m10_m11_m5}"
 INTERP_TSNE_MAX_IMAGES="${INTERP_TSNE_MAX_IMAGES:-80}"
 INTERP_TSNE_SOURCES="${INTERP_TSNE_SOURCES:-gt}"
 INTERP_TSNE_ALL_TEST="${INTERP_TSNE_ALL_TEST:-true}"

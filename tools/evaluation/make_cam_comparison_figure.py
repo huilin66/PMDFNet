@@ -38,6 +38,29 @@ HEADER_FONT_CANDIDATES = (
 )
 
 
+METHOD_LABELS = {
+    "M1": "U-Net",
+    "M2": "DeepLabV3+",
+    "M3": "SegFormer",
+    "M4": "Single-stream ConvNeXt",
+    "M5": "PMDFNet-Small",
+    "L1": "PMDFNet-Small",
+    "M6": "UPerNet",
+    "M7": "FPN",
+    "M8": "MANet",
+    "M9": "U-Net++",
+    "M10": "OCRNet",
+    "M11": "M3LSNet",
+}
+
+
+def method_label(model_id: str) -> str:
+    """Return the paper-facing method name while retaining IDs in metadata."""
+
+    normalized = model_id.strip().upper()
+    return METHOD_LABELS.get(normalized, model_id.strip())
+
+
 def save_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -249,16 +272,16 @@ def main(argv=None) -> int:
         columns = [
             prepare_image(maps[model_ids[0]][image_name] / "rgb.png", args.scale),
             prepare_image(maps[model_ids[0]][image_name] / "slope.png", args.scale),
-            prepare_image(maps[model_ids[0]][image_name] / "gt.png", args.scale),
         ]
         for model_id in model_ids:
             sample_dir = maps[model_id][image_name]
             target_label = cam_target_label(sample_dir, manifests[model_id])
             target_classes[model_id][image_name] = target_label
             columns.append(prepare_image(sample_dir / "cam_overlay.png", args.scale))
+        columns.append(prepare_image(maps[model_ids[0]][image_name] / "gt.png", args.scale))
         rows.append(columns)
 
-    display_columns = ["RGB", "Slope", "GT"] + model_ids
+    display_columns = ["RGB", "Slope"] + [method_label(model_id) for model_id in model_ids] + ["GT"]
     sheet = compose_grid(rows, display_columns, args.scale)
     sheet.save(output_path)
 
@@ -267,16 +290,19 @@ def main(argv=None) -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "analysis": "cam_comparison_figure",
         "models": model_ids,
+        "method_labels": {model_id: method_label(model_id) for model_id in model_ids},
         "samples": images,
         "source_manifests": {model_id: str(model_dirs[model_id] / "cam_manifest.json") for model_id in model_ids},
         "target_classes": target_classes,
         "output": str(output_path),
-        "columns": ["RGB", "Slope", "GT"] + [f"{model_id} CAM" for model_id in model_ids],
+        "columns": ["RGB", "Slope"]
+        + [f"{method_label(model_id)} CAM" for model_id in model_ids]
+        + ["GT"],
         "display_columns": display_columns,
         "layout": {
             "style": "single header row with white gutters",
             "repeat_labels_per_row": False,
-            "header_explains_panels": "Model IDs label CAM panels; the figure caption specifies the CAM view.",
+            "header_explains_panels": "Method names label CAM panels; internal model IDs remain in the manifest.",
         },
         "legend": {
             "slope": "per-tile 2--98 percentile-scaled MMLSv2 Slope band",
