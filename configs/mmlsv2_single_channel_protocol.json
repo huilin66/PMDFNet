@@ -2,7 +2,7 @@
   "project_name": "PMDFNet",
   "project_full_name": "Physically Motivated Dual-Stream Fusion for Multimodal Landslide Segmentation",
   "protocol_version": "pmdfnet_mmlsv2_single_channel_supplement_v1",
-  "description": "Supplementary single-channel removal ablation. It keeps the frozen PMDFNet-Small CE-only training settings and removes one source band from its semantic stream at a time. These runs are separate from the 57-run formal matrix and must not be silently added to the main tables.",
+  "description": "Supplementary single-channel removal ablation. It keeps the frozen PMDFNet CE-only training settings and removes one source band from its semantic stream at a time. These runs are separate from the 57-run formal matrix and must not be silently added to the main tables.",
   "seeds": [
     41,
     42,

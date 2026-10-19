@@ -39,7 +39,7 @@
     "M10": "M10",
     "M11": "M11"
   },
-  "paper_id_map_notes": "Paper-facing experiment ID to protocol run ID. The paper's main model M5 is the L1 configuration (PMDFNet-Small + CE-only, channels 0,1,2 vs 3,4,5,6, Add fusion); it is trained exactly once as L1. A3/A4/B1/C1 are display aliases over M4/L1 and must not be trained again. Stored groups are disjoint: core = M1-M4, extended = M6-M11, ablations = the rest, so running the three groups covers each experiment exactly once.",
+  "paper_id_map_notes": "Paper-facing experiment ID to protocol run ID. The paper's main model M5 is the L1 configuration (PMDFNet + CE-only, channels 0,1,2 vs 3,4,5,6, Add fusion); it is trained exactly once as L1. A3/A4/B1/C1 are display aliases over M4/L1 and must not be trained again. Stored groups are disjoint: core = M1-M4, extended = M6-M11, ablations = the rest, so running the three groups covers each experiment exactly once.",
   "common": {
     "data_root": "",
     "train_split": "train",

@@ -31,6 +31,8 @@
 | `run_robustness_analysis.sh` | 对已完成的 robustness JSONL 做图像级 bootstrap/配对检验，并生成固定规则的失败案例与定性 PNG |
 | `run_interpretability.sh` | 对冻结的 M1/M3/M10/M11/M5 生成含 GT 的 Grad-CAM、`RGB | Slope | M1 | M3 | M10 | M11 | M5 | GT` 对比图、同批预测实例图和全 Test GT 原型 t-SNE |
 | `run_single_channel_ablation.sh` | 独立补充协议 S1–S4：逐个移除 Thermal、Slope、DEM、Grayscale，默认 3 seeds |
+| `run_modality_grouping.sh` | 新增 G2/G3 等容量模态分组对照，默认 3 seeds，共 6 个训练 run |
+| `run_modality_grouping_eval.sh` | 评价 G0–G3，区分 global-pixel 与 per-tile 指标，并执行 G0–G1 主要配对检验 |
 | `run_test_diagnostics.sh` | 对冻结 checkpoint 统一计算 Boundary、逐 tile 分布、前景面积分层和预测熵不确定性 |
 
 ## 复杂度与效率测量
@@ -146,6 +148,53 @@ DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
 
 可用 `SINGLE_CHANNEL_EXPERIMENTS=S3` 或 `SINGLE_CHANNEL_SEEDS="41 42"` 做预先指定的子集运行。
 这些结果要与正式主表分开报告。
+
+## Physically motivated modality grouping
+
+`configs/mmlsv2_modality_grouping_protocol.json` 是独立于正式 57-run 矩阵的分组验证协议：
+
+| Group | 语义分组 | 运行方式 |
+|---|---|---|
+| G0 | Thermal + Slope + DEM vs. Grayscale + RGB | 复用正式协议 L1/M5 |
+| G1 | RGB vs. Thermal + Slope + DEM + Grayscale | 复用正式协议 B2，保持其原始分支顺序 |
+| G2 | Thermal + Slope + Grayscale vs. DEM + RGB | 新训练，3 seeds |
+| G3 | Thermal + DEM + R vs. Slope + Grayscale + G + B | 新训练，3 seeds |
+
+G2/G3 均保持 PMDFNet、ConvNeXt-Small 双编码器、Add Fusion、CE-only、3+4
+分支宽度、训练/验证划分和优化设置不变，因此新增训练量为 `2 × 3 = 6` 个 run。
+G1 不重新交换分支顺序；评估器会检查已解析 checkpoint 的 `channels1/channels2`，
+防止将 branch-order-swapped 变体误当成已有 B2 结果。
+
+先训练新增分组：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  bash scripts/run_modality_grouping.sh
+```
+
+训练完成后评价全部四组：
+
+```bash
+DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
+  bash scripts/run_modality_grouping_eval.sh
+```
+
+输出写入：
+
+```text
+outputs_experiments/modality_grouping/
+  grouping_results.json
+  grouping_results.csv
+  grouping_across_seed.csv
+  grouping_per_tile.csv
+  grouping_paired_stats.csv
+```
+
+`grouping_results.csv` 的主指标是 global-pixel mIoU、F1 和 pooled Boundary F1；
+`grouping_per_tile.csv` 另存每张 Test tile 的指标。配对检验只使用同一 seed、同一
+Test 图像的 per-tile mIoU，默认计算 `G0-G1`、`G0-G2`、`G0-G3` 的 10,000 次
+bootstrap 95% CI 和 sign-flip p 值，其中只有 G0-G1 标记为 primary，后两者标记为
+exploratory。global-pixel mIoU 与 per-tile mIoU 是不同统计量，不能混写。
 
 ## Boundary、逐 tile、面积分层与不确定性
 

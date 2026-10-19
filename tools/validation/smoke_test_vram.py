@@ -36,11 +36,20 @@ def parse_args(argv=None):
     parser.add_argument("--config", default="configs/mmlsv2_paper_protocol.json")
     parser.add_argument(
         "--group",
-        choices=["core", "ablations", "extended", "all"],
+        choices=[
+            "core",
+            "ablations",
+            "extended",
+            "single_channel",
+            "modality_grouping",
+            "all",
+        ],
         default="all",
         help=(
             "Protocol group to probe; all probes every listed experiment. "
-            "The groups core, ablations and extended are disjoint."
+            "The groups core, ablations, extended, single_channel and "
+            "modality_grouping are disjoint when used with their corresponding "
+            "protocol files."
         ),
     )
     parser.add_argument("--device", default="cuda:0")

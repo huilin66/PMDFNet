@@ -5,7 +5,7 @@
 > **目标期刊**：MDPI *Remote Sensing*  
 > **研究定位**：保留既有 PMDFNet，不增加新的主网络模块；通过公平基线、模态分组消融、统计重复和可复现的数据转换协议，检验双流设计的实际价值。  
 > **主数据集**：`mmlsv2_mapped_mars_ls`（由 MMLSv2 转换/映射获得；论文中称为 *converted MMLSv2*，**不是新的独立数据集**）。  
-> **主模型**：`PMDFNet-Small`，两条独立 ConvNeXt-Small 编码器 + 四尺度 Add Fusion + SegFormer All-MLP Decoder；当前 protocol v5 的主损失为 **CE-only**。**在开始正式测试集比较前冻结此选择**。
+> **主模型**：`PMDFNet`，采用两条独立 ConvNeXt-Small 编码器 + 四尺度 Add Fusion + SegFormer All-MLP Decoder；当前 protocol v5 的主损失为 **CE-only**。**在开始正式测试集比较前冻结此选择**。
 > **对照模型**：单流 ConvNeXt-Small + 同类 MLP Decoder；其他经典分割基线。  
 > **明确排除**：TRB-Net（缺少可重复执行的代码/权重/协议，本计划不将其列为必做对比）。  
 > **实验范围**：仅包含 MMLSv2；Landslide4Sense 另立计划。  
@@ -21,7 +21,7 @@
 
 对应研究问题：
 
-- **RQ1：效果**——在统一 MMLSv2 协议下，PMDFNet-Small 相较代表性分割方法能否获得稳定的性能改善？
+- **RQ1：效果**——在统一 MMLSv2 协议下，PMDFNet 相较代表性分割方法能否获得稳定的性能改善？
 - **RQ2：容量控制**——双流优点是否超出“两个编码器导致参数量增加”的影响？
 - **RQ3：输入分组**——原始物理动机的 `3+4` 通道分组是否优于相同通道宽度的其他分组？
 - **RQ4：设计合理性**——简单 Add Fusion 与 CE-only 主训练协议是否能提供有竞争力的准确率—复杂度权衡；CE + Dice 作为 L3 对照时是否带来额外收益？
@@ -31,7 +31,7 @@
 
 ### 0.1 主模型为何选择 Small
 
-本轮以**当前已验证的 `PMDFNet-Small`**为主模型，配套使用 ConvNeXt-Small 单流直接对照；当前 protocol v5 不包含 PMDFNet-Tiny 正式运行项，不允许依据 Test 表现事后切换论文主模型。
+本轮以**当前已验证的 `PMDFNet`**为主模型，配套使用 ConvNeXt-Small 单流直接对照；当前 protocol v5 不包含 PMDFNet-Tiny 正式运行项，不允许依据 Test 表现事后切换论文主模型。
 
 应在实验记录中分别交代：
 
@@ -129,7 +129,7 @@
 | M2 | DeepLabV3+ | DeepLabV3+ + ResNet50 | 全部 7 通道 | core，CE-only |
 | M3 | SegFormer | MiT-B2 | 全部 7 通道 | core，CE-only |
 | M4 | **Single-stream ConvNeXt-Small + MLP Decoder** | ConvNeXt-Small | 全部 7 通道 | **core，直接对照** |
-| M5 | **PMDFNet-Small（协议运行项 L1）** | ConvNeXt-Small ×2 + Add Fusion | 原始 3+4 通道 | **ablations，主方法，CE-only** |
+| M5 | **PMDFNet（协议运行项 L1）** | ConvNeXt-Small ×2 + Add Fusion | 原始 3+4 通道 | **ablations，主方法，CE-only** |
 | M6 | UPerNet | ResNet50 | 全部 7 通道 | extended，CE-only，非确定性例外 |
 | M7 | FPN | ResNet50 | 全部 7 通道 | extended，CE-only |
 | M8 | MANet | ResNet50 | 全部 7 通道 | extended，CE-only |
@@ -152,7 +152,7 @@
 | A1 | 单流 ConvNeXt-Small + MLP Decoder | RGB + Grayscale（4） | 仅光学信息 | 新训练 |
 | A2 | 单流 ConvNeXt-Small + MLP Decoder | Thermal + Slope + DEM（3） | 仅地形/热物理信息 | 新训练 |
 | A3 | 单流 ConvNeXt-Small + MLP Decoder | 7 通道 | Early Fusion | **M4（显示别名）** |
-| A4 | PMDFNet-Small | 原始 3+4 | 原始双流 | **L1/M5（显示别名）** |
+| A4 | PMDFNet | 原始 3+4 | 原始双流 | **L1/M5（显示别名）** |
 | A5 | **近似容量对照：单流 ConvNeXt + MLP Decoder** | 7 通道 | 控制容量/参数量混杂 | 新训练 |
 
 A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量和 GFLOPs；如无法与 M5 严格匹配，应报告百分比偏差，并将比较称为“近似容量对照”，不写成“参数完全相同”。
@@ -165,7 +165,7 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 ## E3. 通道分组消融【必须】
 
-**严格控制**：所有方案都使用同一 `PMDFNet-Small`、相同融合和 Decoder，**Stream 1 固定 3 通道，Stream 2 固定 4 通道**。除首层输入映射外，不调整网络配置。
+**严格控制**：所有方案都使用同一 `PMDFNet`、相同融合和 Decoder，**Stream 1 固定 3 通道，Stream 2 固定 4 通道**。除首层输入映射外，不调整网络配置。
 
 | ID | Stream 1：3 通道 | Stream 2：4 通道 | 理由 | 阶段 |
 |---|---|---|---|---|
@@ -182,12 +182,64 @@ A5 当前固定为单流 ConvNeXt-Base + MLP Decoder。必须实测总参数量�
 
 **交付**：`Table 4. Ablation of channel grouping strategies`。
 
+### E3.1 Physically motivated modality grouping analysis【新增补充协议，不并入 57 个正式 run】
+
+原有 B1/B2/B3 结果说明原始分组在已测试方案中表现最好，但 B1 与最强替代 B2 的差异需要
+使用同一 Test 图像的配对统计进一步核对。新增分析采用四个固定组：
+
+| ID | 实验性质 | Stream 1 | Stream 2 | 处理 |
+|---|---|---|---|---|
+| G0 | 原始分组 | Thermal + Slope + DEM | Grayscale + RGB | 复用 L1/M5 |
+| G1 | 最强已有替代 | RGB | Thermal + Slope + DEM + Grayscale | 复用 B2 |
+| G2 | 等容量交换 | Thermal + Slope + Grayscale | DEM + RGB | 新训练 |
+| G3 | 等容量交换 | Thermal + DEM + R | Slope + Grayscale + G + B | 新训练 |
+
+这里的 G1 必须复用既有 B2 的实现与 checkpoint。既有 B2 的实际存储分支顺序是
+`RGB | Thermal + Slope + DEM + Grayscale`；表中的语义分组不应被解释为重新训练的
+branch-order-swapped 版本。评估器会检查 G0/G1/G2/G3 的 `channels1/channels2`，并对共享
+配置进行一致性校验。
+
+G2、G3 都保持相同的 PMDFNet、ConvNeXt-Small 双编码器、Add Fusion、CE-only、3+4 分支宽度、
+输入通道总数、训练/验证划分、优化器、学习率计划、epoch 和 checkpoint 选择规则。因此，
+新增训练量为 G2/G3 × `41/42/43`，共 **6 个 run**；G0/G1 不重复训练。
+
+统计口径固定如下：
+
+1. 主表继续报告 global-pixel mIoU、F1 和 pooled Boundary F1 的三 seed 均值 ± 标准差。
+2. 配对统计只把同一 seed、同一 Test 图像的 per-tile mIoU 作为配对观测，报告 G0−G1 的
+   mean difference、10,000 次 paired bootstrap 95% CI 和双侧 sign-flip (p) 值。
+3. G0−G2、G0−G3 只作探索性/描述性比较；不对所有指标和所有组合进行大量显著性检验。
+4. global-pixel mIoU 与 per-tile mIoU 是不同 estimand，必须在表注和正文中明确区分；跨 seed
+   均值不提供 seed-level CI，避免把 Test 图像抽样不确定性与训练随机性混为一谈。
+5. G1 是从既有已评估分组中选出的最强替代，因此 G0−G1 应写为
+   “targeted paired comparison with the strongest evaluated alternative”，不能包装为完全
+   预先注册的 confirmatory test。
+
+协议与入口：
+
+- `configs/mmlsv2_modality_grouping_protocol.json`：冻结 G2/G3 的训练配置，并记录 G0/G1 的复用来源；
+- `scripts/run_modality_grouping.sh`：仅训练 G2/G3 的 6 个 run；
+- `tools/evaluation/evaluate_modality_grouping.py`：重新评价 G0–G3，输出 global/per-tile 指标和配对统计；
+- `scripts/run_modality_grouping_eval.sh`：执行上述冻结 Test 评价。
+
+输出目录为 `outputs_experiments/modality_grouping/`，包括
+`grouping_results.{json,csv}`、`grouping_across_seed.csv`、`grouping_per_tile.csv` 和
+`grouping_paired_stats.csv`。新增分组应作为独立的 **Modality Grouping Analysis** subsection
+和单独表格/统计小表呈现，不与架构、容量、融合和损失消融混在同一张表中。
+
+结论边界：若 G0 在 G1–G3 上均保持稳定优势，可写成“在当前 MMLSv2 协议和所评估的替代
+分组中，原始物理动机分组表现更优”；若差异不稳定或 CI 跨 0，则保留“已测试方案中最好”
+并降低普遍性表述，不声称物理分组优于所有可能的分组策略。
+
+**交付**：Modality Grouping Analysis 表（G0–G3 的 global-pixel 指标）、配对统计小表
+（G0−G1 的 per-tile mIoU CI 与 p 值）和 G2/G3 的逐 seed 记录。
+
 ---
 
-### E3.1 单通道移除补充消融【补充协议，不并入 57 个正式 run】
+### E3.2 单通道移除补充消融【补充协议，不并入 57 个正式 run】
 
 为补充回答“每个输入波段是否真正有贡献”，新增独立协议
-`configs/mmlsv2_single_channel_protocol.json`。它沿用 PMDFNet-Small、Add Fusion、CE-only、
+`configs/mmlsv2_single_channel_protocol.json`。它沿用 PMDFNet、Add Fusion、CE-only、
 batch size `32`、`41/42/43` seeds 和正式训练流程，只在对应语义分支中移除一个源波段：
 
 | ID | 移除波段 | Stream 1 | Stream 2 |
@@ -280,7 +332,7 @@ Supplementary Table 单独报告，并同时给出 Params/GFLOPs，避免把去�
 
 - **Validation 例图**：可以用于开发阶段分析和论文的解释性展示，但选择标准必须透明。
 - **Test 例图**：在查看模型预测前，按预先确定的随机种子/样本 ID 哈希选择固定测试图像；不得事后只挑出 M5 优势最大的案例。
-- 推荐对每张例图展示：`RGB | GT | Single-stream Small | PMDFNet-Small | FP/FN error map`。
+- 推荐对每张例图展示：`RGB | GT | Single-stream ConvNeXt-Small | PMDFNet | FP/FN error map`。
 - 分析类型包括：明显滑坡主体、易误判背景、边界复杂、漏检、误检、两种模型都失败的情形。
 - 建议使用测试集的总体 FP/FN 统计或按图像分布分位数支撑定性讨论，不应从几个案例推导总体性能。
 
@@ -388,11 +440,12 @@ Figure 3（前景面积分层）和 Figure 4（熵—错误率关系）；正文
 | 分组 | 协议文件 | 训练项 | run 数量 | 启动入口 |
 |---|---|---|---:|---|
 | single_channel | `configs/mmlsv2_single_channel_protocol.json` | S1、S2、S3、S4 | **4 × 3 = 12** | `scripts/run_single_channel_ablation.sh` |
+| modality_grouping | `configs/mmlsv2_modality_grouping_protocol.json` | G2、G3（G0/G1 复用） | **2 × 3 = 6** | `scripts/run_modality_grouping.sh` |
 | Test diagnostics | 无新增训练 | M4/L1（可扩展至 S1–S4） | 冻结 checkpoint 推理 | `scripts/run_test_diagnostics.sh` |
 
 补充协议有自己的 output root、summary.csv 和 protocol version。它们用于回答更细的波段贡献、
-边界质量、性能分布、前景面积敏感性和预测不确定性问题，不能与正式 57 个 run 混合计数，也
-不能在看到 Test 结果后临时增加或删除某个 S1–S4 条目。
+边界质量、性能分布、前景面积敏感性、预测不确定性和物理分组稳健性问题，不能与正式 57
+个 run 混合计数，也不能在看到 Test 结果后临时增加或删除某个 S1–S4、G2 或 G3 条目。
 
 其中：
 
@@ -400,17 +453,17 @@ Figure 3（前景面积分层）和 Figure 4（熵—错误率关系）；正文
 - 代表性基线：M1、M2、M3；
 - 模态贡献：A1、A2；
 - 容量对照：A5（单流 ConvNeXt-Base）；
-- 通道分组：L1/M5（B1 别名）、B2、B3；
+- 通道分组初始证据：L1/M5（B1 别名）、B2、B3；新增 G0–G3 的等容量分组验证单独归档；
 - 融合与损失：L1/M5（C1 别名）、C2、L2、L3；
 - 扩展基线：M6–M11，均属于当前正式矩阵，不再写成未执行的“可选”结果。
 
-**训练去重**：`M4=A3`；`L1=M5=A4=B1=C1`。同配置、同 seed、同数据版本直接共享模型与预测。A1/A2、A5、B2/B3、C2、L2、L3 需要独立训练。
+**训练去重**：`M4=A3`；`L1=M5=A4=B1=C1=G0`；`G1` 复用 B2。同配置、同 seed、同数据版本直接共享模型与预测。A1/A2、A5、B2/B3、C2、L2、L3、G2、G3 需要独立训练。
 
 第一轮结束设立**分析关口**：
 
 1. 若 L1/M5 在 3 seeds 上对 M4 的优势不稳定，先排查数据、统计口径和训练差异，不要根据 Test 回头调模型。
 2. 若 L1/M5 不优于 A5，不能把性能提升单方面归因为模态解耦；如实讨论参数与容量影响。
-3. 若 B1 不优于 B2/B3，修改**论文解释与结论范围**，而不是通过 Test 导向的分组搜索寻找支持原主张的结果。
+3. 若 B1 不优于 B2/B3，或 G0−G1 的配对 CI 跨 0，修改**论文解释与结论范围**，而不是通过 Test 导向的分组搜索寻找支持原主张的结果。
 4. 若核心证据不足，可以决定暂缓期刊投稿或另启**新的实验版本**；不得把同一 Test 的多轮反馈伪装成独立最终测试。
 
 ---
@@ -435,16 +488,18 @@ Figure 3（前景面积分层）和 Figure 4（熵—错误率关系）；正文
 8. 运行 `scripts/run_complexity_eval.sh` 完成 Params、GFLOPs、FPS/latency 和峰值推理显存测量；`run_vram_smoke.sh` 仍只作显存/建模探针。
 9. 【已完成】按独立协议运行 `scripts/run_single_channel_ablation.sh`，完成 S1–S4 × `41/42/43`；
    这组训练在 Test 诊断前已冻结，未由 Test 结果反向选择波段。
-10. 核实双流、模态划分、损失、单通道贡献和参数效率方面的结论是否成立。
+10. 在最终 Test 冻结前运行 `scripts/run_modality_grouping.sh`，完成 G2/G3 × `41/42/43` 的 6 个新增 run；G0/G1 只复用既有 checkpoint，不重新训练。
+11. 核实双流、模态划分、损失、单通道贡献和参数效率方面的结论是否成立。
 
 ### Phase 3：冻结后最终测试与写作
 
-11. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
-12. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
-13. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
-14. 【已完成】运行 `scripts/run_test_diagnostics.sh`，生成 M4/L1 以及 S1–S4 的 Boundary、逐 tile、前景面积分层和熵不确定性结果。
-15. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M1/M3/M10/M11/M5 与 GT 的性能条件化预测实例对比、CAM 对比和既有全 Test GT 前景/背景原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed、样本选择规则和 data split。两类对比图的固定列顺序为 `RGB | Slope | M1 | M3 | M10 | M11 | M5 | GT`。
-16. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果，也不得把 CAM/t-SNE、Boundary 或熵相关性的描述性结果写成因果或显著性证据。
+12. 确认 57 个 formal run 均存在 `best.pth`、`config.json` 和完成日志后，运行 `scripts/run_test_eval.sh`；该脚本要求默认找到 57 个正式 run。
+13. 确认 G2/G3 的 6 个新增 run 完成后，运行 `scripts/run_modality_grouping_eval.sh`；该脚本同时评价 G0–G3，生成 global-pixel/per-tile 指标及 G0−G1 主要配对检验。
+14. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
+15. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
+16. 【已完成】运行 `scripts/run_test_diagnostics.sh`，生成 M4/L1 以及 S1–S4 的 Boundary、逐 tile、前景面积分层和熵不确定性结果。
+17. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M1/M3/M10/M11/M5 与 GT 的性能条件化预测实例对比、CAM 对比和既有全 Test GT 前景/背景原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed、样本选择规则和 data split。两类对比图的固定列顺序为 `RGB | Slope | M1 | M3 | M10 | M11 | M5 | GT`。
+18. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果，也不得把 CAM/t-SNE、Boundary、熵相关性或 G0−G1 配对结果写成超出其统计定义的因果或普遍性证据。
 
 > **注意**：理想流程是先在 Validation 完成各配置、checkpoint、阈值和实验矩阵的冻结，然后一次性评价 Test。不能完成一次 Test 后再决定是否增加某个更可能获胜的分组或改主模型。
 
@@ -457,11 +512,12 @@ Figure 3（前景面积分层）和 Figure 4（熵—错误率关系）；正文
 | Table 1 | Converted MMLSv2：数据划分、各通道统计和映射协议摘要 | 必须 |
 | Table 2 | M1–M5 主基线（M5 由 L1 提供，含均值±标准差） | 必须 |
 | Table 3 | A1–A5 单流/双流、模态贡献及容量控制 | 必须 |
-| Table 4 | B1–B3：严格 3+4 分组比较（B1 复用 L1） | 必须 |
+| Table 4 | B1–B3：已有严格 3+4 分组比较（B1 复用 L1） | 必须 |
+| Table 4a（新增分组表） | G0–G3：物理分组与等容量交换对照；配对统计另列 | 必须 |
 | Table 5 | Add vs Concat；CE/Dice Loss（L1/L2/L3） | 必须 |
 | Table 6 | Params / GFLOPs / FPS | 必须 |
 | Table 7 | 预设受控扰动及模态缺失 | 建议 |
-| Figure 1 | 原始 PMDFNet-Small 结构图（更新输入和维度标注） | 必须 |
+| Figure 1 | 原始 PMDFNet 结构图（更新输入和维度标注） | 必须 |
 | Figure 2 | 逐 tile 指标分布 | 建议 |
 | Figure 3 | small/medium/large 前景面积分层 | 建议 |
 | Figure 4 | 预测熵与 tile 错误率关系 | 建议 |
@@ -509,6 +565,20 @@ outputs_experiments/pmdfnet_mmlsv2_single_channel/
     checkpoints/best.pth
     test_metrics.json
   summary.csv
+
+outputs_experiments/pmdfnet_mmlsv2_modality_grouping/
+  {G2,G3}_..._s{41,42,43}_{timestamp}/
+    config.json
+    checkpoints/best.pth
+    test_metrics.json
+  summary.csv
+
+outputs_experiments/modality_grouping/
+  grouping_results.json
+  grouping_results.csv
+  grouping_across_seed.csv
+  grouping_per_tile.csv
+  grouping_paired_stats.csv
 
 outputs_experiments/robustness/
   robustness_results.json
@@ -579,7 +649,7 @@ outputs_experiments/test_diagnostics_single_channel/
 - [ ] 已记录公开数据集来源、引用、通道、单位、归一化和映射规则；本轮不以数据泄漏、场景独立性或完整数据审计作为阻塞项。
 - [ ] 标注来源、数据划分、Test 使用边界已完整披露。
 - [ ] 所有主基线在相同评估协议下比较；参数近似匹配对照已报告差异。
-- [ ] B1–B3 都满足固定 3+4 的分支输入宽度；B4 不属于当前 protocol v5。
+- [ ] B1–B3 以及 G0–G3 都满足固定 3+4 的分支输入宽度；B4 不属于当前 protocol v5。
 - [ ] 19 个正式协议运行项均使用 `41/42/43` 三个 seeds，报告 mean±std；M5/A4/B1/C1 由 L1 复用，不依据 Test 选 seed。
 - [ ] 已记录 batch size `32`、`drop_last=True`、CE-only 主损失，以及 L2/L3 的损失覆盖。
 - [ ] 已记录 M6 因 UPerNet CUDA 反向算子限制而使用 `deterministic=false`，不得将 M6 描述为逐位可复现。
@@ -591,6 +661,7 @@ outputs_experiments/test_diagnostics_single_channel/
 - [x] 已运行并归档 E5 的 clean/扰动指标、图像级 bootstrap/配对检验以及 FP/FN 定性 PNG。
 - [x] 已在冻结 Test 样本规则下运行并归档历史 M4/L1 seed 41 的 CAM/GT-Pred 原型 t-SNE，以及按 L1/M5 相对 M1/M2/M3/M10/M11 逐图像 mIoU 优势筛选的 M1/M3/M10/M11/M5 seed 41 CAM 和预测实例对比；完整归档保留 12 张优势样本，论文版 CAM 和预测图按优势排序展示前 6 张，并增加 M5 与 GT 列；当前两类对比图均采用 `RGB | Slope | M1 | M3 | M10 | M11 | M5 | GT` 排版，未把解释性图误写成显著性或因果证据。
 - [x] 已运行并归档 Boundary 指标、逐 tile 分布、前景面积分层和熵不确定性分析；已固定 2 像素 Boundary 容差和 3 组面积分层规则。
+- [ ] 已完成 G2/G3 × `41/42/43` 的 6 个新增 run，并用 `run_modality_grouping_eval.sh` 生成 G0–G3 的 global/per-tile 结果和 G0−G1 配对统计；G0−G2/G3 仅作探索性比较。
 - [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
 - [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。
 - [ ] 不将 TTA、Ensemble、测试集校正和模型主体效果混为一谈。

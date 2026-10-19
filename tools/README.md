@@ -10,7 +10,9 @@ is not part of the paper training entry point.
   `tsne_prototype_analysis.py` (GT/Pred feature prototypes) and
   `make_cam_comparison_figure.py` (inference-free figure composition), plus
   `evaluate_test_diagnostics.py` for boundary metrics, per-tile distributions,
-  foreground-area strata and predictive-entropy diagnostics.
+  foreground-area strata and predictive-entropy diagnostics, and
+  `evaluate_modality_grouping.py` for G0–G3 global/per-tile grouping metrics
+  and paired mIoU statistics.
 - `validation/`: data-only smoke checks and bounded synthetic VRAM probes.
 
 Historical competition, SKG, submission, and analysis code is preserved under

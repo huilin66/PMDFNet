@@ -26,10 +26,19 @@ def parse_args(argv=None):
     parser.add_argument(
         "--group",
         default="core",
-        choices=["core", "ablations", "extended", "single_channel", "all"],
+        choices=[
+            "core",
+            "ablations",
+            "extended",
+            "single_channel",
+            "modality_grouping",
+            "all",
+        ],
         help=(
             "Experiment group to run; all includes every group in the JSON. "
-            "The groups core, ablations, extended and single_channel are disjoint."
+            "The groups core, ablations, extended, single_channel and "
+            "modality_grouping are disjoint when used with their corresponding "
+            "protocol files."
         ),
     )
     parser.add_argument("--seed", required=True, type=int, help="One reproducibility seed.")
