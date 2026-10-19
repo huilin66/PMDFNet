@@ -10,10 +10,10 @@
 ## 1. 当前结论
 
 - 正式矩阵共 19 个协议运行项、3 个随机种子（41/42/43），共 57 个 run；训练和 Test 评估均已完成。
-- 主模型是 `L1`，论文展示 ID 为 `M5`：PMDFNet-Small、`3+4` 双流、Add Fusion、CE-only。
+- 主模型是 `L1`，论文展示 ID 为 `M5`：PMDFNet、`3+4` 双流、Add Fusion、CE-only。
 - L1/M5 的 Test mIoU 为 **0.8594 ± 0.0034**，是当前 19 个正式运行项中的最高均值。
 - 相同输入的单流直接对照 M4 为 `0.8470 ± 0.0100`；L1 相对 M4 的描述性提升为 `+0.0124` mIoU。
-- 原始通道分组 L1 为 `0.8594`，B2 为 `0.8520`，B3 为 `0.8460`；当前结果支持“本轮原始分组表现最好”的描述，但尚未完成显著性检验。
+- 原始通道分组 L1 为 `0.8594`，B2 为 `0.8520`，B3 为 `0.8460`；新增等容量 G2/G3 后，G0 仍取得最高 global-pixel mIoU（`0.8594` vs. `0.8520/0.8531/0.8505`）。G0−G1 的逐 tile 配对差异跨 seed 的描述性均值为 `+0.0104`，但 seed 43 的 bootstrap CI 跨 0，因此结论限定为“在已评估分组中表现最好”。
 - Add Fusion 的 L1 为 `0.8594`，Concat Fusion 的 C2 为 `0.8462`；在当前训练协议下 Add 表现更好。
 - CE-only（L1）高于 CE + Dice（L3，`0.8534`）和 Dice-only（L2，`0.8323`）。这只是同一架构、同一数据划分下的描述性结果。
 - E5 受控扰动、图像级 bootstrap/配对检验以及固定规则的 Test 定性/FP-FN 案例分析已在 A100 上完成；这些结果支持当前 M4 vs. L1/M5 的配对比较，但不替代跨 seed 的训练随机性汇总，也未对全部消融组合做成对检验。
@@ -116,7 +116,7 @@ M6/UPerNet 因当前 CUDA `adaptive_avg_pool2d` 反向传播没有确定性实�
 | M2 | DeepLabV3+ + ResNet50 | 0.8062 ± 0.0017 | 0.8176 ± 0.0108 | 0.7629 ± 0.0150 | 0.8723 ± 0.0068 | 0.8654 ± 0.0097 |
 | M3 | SegFormer MiT-B2 | 0.8260 ± 0.0017 | 0.8276 ± 0.0071 | 0.7757 ± 0.0101 | 0.8796 ± 0.0043 | 0.8737 ± 0.0064 |
 | M4 | 单流 ConvNeXt-Small + MLP | 0.8316 ± 0.0081 | 0.8470 ± 0.0100 | 0.7998 ± 0.0132 | 0.8941 ± 0.0068 | 0.8887 ± 0.0081 |
-| **M5 = L1** | **PMDFNet-Small，双流 Add，CE-only** | **0.8209 ± 0.0096** | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.9022 ± 0.0028** | **0.8990 ± 0.0025** |
+| **M5 = L1** | **PMDFNet，双流 Add，CE-only** | **0.8209 ± 0.0096** | **0.8594 ± 0.0034** | **0.8166 ± 0.0041** | **0.9022 ± 0.0028** | **0.8990 ± 0.0025** |
 | M6 | UPerNet + ResNet50 | 0.7997 ± 0.0057 | 0.8100 ± 0.0099 | 0.7524 ± 0.0131 | 0.8677 ± 0.0068 | 0.8587 ± 0.0085 |
 | M7 | FPN + ResNet50 | 0.8013 ± 0.0109 | 0.8099 ± 0.0106 | 0.7513 ± 0.0151 | 0.8686 ± 0.0061 | 0.8579 ± 0.0099 |
 | M8 | MANet + ResNet50 | 0.8108 ± 0.0065 | 0.8245 ± 0.0050 | 0.7720 ± 0.0072 | 0.8771 ± 0.0028 | 0.8713 ± 0.0046 |
@@ -140,6 +140,19 @@ M6/UPerNet 因当前 CUDA `adaptive_avg_pool2d` 反向传播没有确定性实�
 | B3 | Thermal + DEM + Grayscale vs. Slope + RGB | 0.8460 ± 0.0199 | 0.7973 ± 0.0286 | 0.8948 ± 0.0112 | 0.8870 ± 0.0178 |
 
 A5 是近似容量对照，不是严格参数量匹配；Params/GFLOPs/延迟/FPS/峰值推理显存已统一测量，见第 8 节，但仍不能将 A5 差异完全归因于模态解耦。
+
+### 6.1.1 物理动机模态分组补充实验
+
+为在相同双流架构和 3+4 分支宽度下检验分组本身，G0 复用 L1/M5，G1 复用既有 B2，新增 G2/G3 各运行 seed 41/42/43。下表直接采用分组评估器输出的 global-pixel 指标；`±` 为三个 seed 的总体标准差。`Δ tile mIoU` 定义为同一 Test tile 上 G0 减去对应分组的 mIoU，再对 seed-specific 配对均值取平均，因此与 global-pixel mIoU 不是同一个 estimand。
+
+| Group | Stream 1 | Stream 2 | Test mIoU | Test F1 | Boundary F1 | Δ tile mIoU (G0 − group) |
+|---|---|---|---:|---:|---:|---:|
+| G0 | Thermal + Slope + DEM | Grayscale + RGB | 0.8594 ± 0.0028 | 0.8990 ± 0.0020 | 0.6366 ± 0.0015 | — |
+| G1 | RGB | Thermal + Slope + DEM + Grayscale | 0.8520 ± 0.0027 | 0.8929 ± 0.0025 | 0.6326 ± 0.0054 | +0.0104 |
+| G2 | Thermal + Slope + Grayscale | DEM + RGB | 0.8531 ± 0.0015 | 0.8943 ± 0.0013 | 0.6409 ± 0.0036 | +0.0104 |
+| G3 | Thermal + DEM + R | Slope + Grayscale + G + B | 0.8505 ± 0.0069 | 0.8919 ± 0.0060 | 0.6415 ± 0.0194 | +0.0108 |
+
+G0−G1 是针对既有结果中最强替代分组的 targeted paired comparison，而不是完全预先注册的 confirmatory test。每个 seed 使用 133 个配对 Test tile、10,000 次 bootstrap 和 10,000 次 sign-flip：seed 41 的差异为 `+0.0110`（95% CI `[0.0005, 0.0225]`，`p=0.0500`），seed 42 为 `+0.0161`（`[0.0031, 0.0307]`，`p=0.0167`），seed 43 为 `+0.0040`（`[-0.0103, 0.0171]`，`p=0.5797`）。三 seed 配对差异的描述性均值为 `+0.0104`，不提供 seed-level CI 或汇总 p 值。G0−G2 和 G0−G3 仅作探索性比较；完整逐 tile 数据和全部统计见 [`grouping_results.json`](../outputs_experiments/modality_grouping/grouping_results.json)、[`grouping_across_seed.csv`](../outputs_experiments/modality_grouping/grouping_across_seed.csv) 和 [`grouping_paired_stats.csv`](../outputs_experiments/modality_grouping/grouping_paired_stats.csv)。
 
 ### 6.2 Fusion 与损失
 
@@ -215,8 +228,9 @@ M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中�
 | 单通道移除训练消融 | 已完成 | 在 A100-1 按独立协议完成 S1–S4 × seed 41/42/43 共 12 个 run；S1/S2/S3/S4 分别移除 Thermal/Slope/DEM/Grayscale。本地归档见 [`summary.csv`](../outputs_experiments/pmdfnet_mmlsv2_single_channel/summary.csv) 和 [`launcher.log`](../outputs_experiments/pmdfnet_mmlsv2_single_channel/launcher.log)；远程原始目录为 `/data/huilin/projects/PMDFNet/outputs_experiments/pmdfnet_mmlsv2_single_channel/`。 |
 | Boundary、逐 tile、面积分层与不确定性（M4/L1） | 已完成 | 使用冻结 M4/L1 checkpoint、3 个 seed 和公开 Test 完成 6 个诊断 run；固定 2 像素 Boundary 容差、3 组等数量面积分层和自然对数熵。本地汇总见 [`diagnostics_summary.csv`](../outputs_experiments/test_diagnostics/diagnostics_summary.csv)，逐 tile/分层数据和 PNG 也已归档；远程原始目录为 `/data/huilin/projects/PMDFNet/outputs_experiments/test_diagnostics/`。 |
 | Boundary、逐 tile、面积分层与不确定性（S1–S4） | 已完成 | 使用同一协议对 12 个单通道冻结 checkpoint 完成 Test 诊断。本地汇总见 [`diagnostics_summary.csv`](../outputs_experiments/test_diagnostics_single_channel/diagnostics_summary.csv)，逐 tile/分层数据和 PNG 也已归档；远程原始目录为 `/data/huilin/projects/PMDFNet/outputs_experiments/test_diagnostics_single_channel/`。 |
+| 物理动机模态分组（G0–G3） | 已完成 | G2/G3 × seed 41/42/43 共 6 个新增训练，G0/G1 复用已有 checkpoint；Test 评价覆盖 4 组、3 个 seed 和 133 个 tile，并完成 G0−G1 主要配对统计及 G0−G2/G3 探索性比较。完整结果见 [`grouping_results.json`](../outputs_experiments/modality_grouping/grouping_results.json)、[`grouping_results.csv`](../outputs_experiments/modality_grouping/grouping_results.csv)、[`grouping_per_tile.csv`](../outputs_experiments/modality_grouping/grouping_per_tile.csv) 和 [`grouping_paired_stats.csv`](../outputs_experiments/modality_grouping/grouping_paired_stats.csv)。 |
 
-执行入口：[`run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)、[`run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh) 和 [`run_interpretability.sh`](../scripts/run_interpretability.sh)。固定扰动协议：[`mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；解释性分析规则见实验计划 E7.1。
+执行入口：[`run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)、[`run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh)、[`run_interpretability.sh`](../scripts/run_interpretability.sh) 和 [`run_modality_grouping_eval.sh`](../scripts/run_modality_grouping_eval.sh)。固定扰动协议：[`mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；解释性分析规则见实验计划 E7.1，模态分组规则见 E3.1。
 
 单通道与 Test 诊断执行入口：[`run_single_channel_ablation.sh`](../scripts/run_single_channel_ablation.sh) 和 [`run_test_diagnostics.sh`](../scripts/run_test_diagnostics.sh)。本轮 A100-1 执行未发现 `ERROR` 或 `Traceback`；这些补充结果不改变 57-run 正式主矩阵。
 

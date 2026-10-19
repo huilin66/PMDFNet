@@ -234,6 +234,11 @@ G2、G3 都保持相同的 PMDFNet、ConvNeXt-Small 双编码器、Add Fusion、
 **交付**：Modality Grouping Analysis 表（G0–G3 的 global-pixel 指标）、配对统计小表
 （G0−G1 的 per-tile mIoU CI 与 p 值）和 G2/G3 的逐 seed 记录。
 
+执行状态（2026-10-19）：已在 A100-1 完成 G2/G3 × `41/42/43` 共 6 个训练 run，
+并使用 `scripts/run_modality_grouping_eval.sh` 完成 G0–G3 的公开 Test 评价。结果已归档于
+`outputs_experiments/modality_grouping/`，包括 global-pixel/per-tile 汇总和 G0−G1 配对统计。
+G0−G2/G3 按预先约定仅作探索性比较。
+
 ---
 
 ### E3.2 单通道移除补充消融【补充协议，不并入 57 个正式 run】
@@ -645,7 +650,7 @@ outputs_experiments/test_diagnostics_single_channel/
 
 ## 6. 投稿前检查清单
 
-- [ ] 已明确主模型 Small 的版本及其与原 Workshop Tiny/Small 结果的关系；当前 protocol v5 不包含 PMDFNet-Tiny 正式运行项。
+- [ ] 已明确主模型 PMDFNet 的版本及其与原 Workshop Tiny/Small 结果的关系；当前 protocol v5 不包含 PMDFNet-Tiny 正式运行项。
 - [ ] 已记录公开数据集来源、引用、通道、单位、归一化和映射规则；本轮不以数据泄漏、场景独立性或完整数据审计作为阻塞项。
 - [ ] 标注来源、数据划分、Test 使用边界已完整披露。
 - [ ] 所有主基线在相同评估协议下比较；参数近似匹配对照已报告差异。
@@ -661,7 +666,7 @@ outputs_experiments/test_diagnostics_single_channel/
 - [x] 已运行并归档 E5 的 clean/扰动指标、图像级 bootstrap/配对检验以及 FP/FN 定性 PNG。
 - [x] 已在冻结 Test 样本规则下运行并归档历史 M4/L1 seed 41 的 CAM/GT-Pred 原型 t-SNE，以及按 L1/M5 相对 M1/M2/M3/M10/M11 逐图像 mIoU 优势筛选的 M1/M3/M10/M11/M5 seed 41 CAM 和预测实例对比；完整归档保留 12 张优势样本，论文版 CAM 和预测图按优势排序展示前 6 张，并增加 M5 与 GT 列；当前两类对比图均采用 `RGB | Slope | M1 | M3 | M10 | M11 | M5 | GT` 排版，未把解释性图误写成显著性或因果证据。
 - [x] 已运行并归档 Boundary 指标、逐 tile 分布、前景面积分层和熵不确定性分析；已固定 2 像素 Boundary 容差和 3 组面积分层规则。
-- [ ] 已完成 G2/G3 × `41/42/43` 的 6 个新增 run，并用 `run_modality_grouping_eval.sh` 生成 G0–G3 的 global/per-tile 结果和 G0−G1 配对统计；G0−G2/G3 仅作探索性比较。
+- [x] 已完成 G2/G3 × `41/42/43` 的 6 个新增 run，并用 `run_modality_grouping_eval.sh` 生成 G0–G3 的 global/per-tile 结果和 G0−G1 配对统计；G0−G2/G3 仅作探索性比较。
 - [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
 - [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。
 - [ ] 不将 TTA、Ensemble、测试集校正和模型主体效果混为一谈。
