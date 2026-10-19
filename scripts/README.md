@@ -165,7 +165,7 @@ DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
 
 M11 的 `mamba_ssm` selective-scan 和内置 `gated_conv_simulator` 是两个不同的后端，不能只记录“模型名为 M11”。复杂度和 robustness 输出会写入 `m3lsnet_backend` 与 `mamba_ssm_available`；正式训练/论文冻结时也应将这个字段连同环境信息归档。
 
-当前历史 57 个 run 的 `git_dirty=true` 表示运行开始时工作树有未提交改动：summary 中的 commit 只能恢复当时的 HEAD，不能恢复这些未提交差异。最终冻结建议先提交全部代码/协议并确认 `git status --short` 为空，再重新跑至少论文主表和关键消融；如果暂时不重跑，则必须归档 `git diff HEAD`、暂存区差异、未跟踪文件、协议 JSON、环境/依赖清单以及对应输出目录，并把结果标记为 dirty-snapshot。该过程不会自动删除或重置现有结果。
+历史 57 个正式训练/Test run 已确认记录为 `git_dirty=false`，其 provenance 由 commit `653b81dc76db4d0774d2126cad98641ca32390a9`、配置文件、运行环境和原始输出共同构成。后续新实验仍应在 clean working tree 下启动，并将 commit hash、环境元数据和协议 JSON 一并写入输出目录；该过程不会自动删除或重置现有结果。
 
 ## 环境变量
 
