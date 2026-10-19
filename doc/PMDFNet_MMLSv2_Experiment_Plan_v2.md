@@ -343,9 +343,9 @@ mask 的 Test split 推理，不改写各 run 的主 `test_metrics.json`，也�
   形成 small/medium/large 三组。133 张 Test tile 将得到 45/44/44 张的确定性分组；每组同时
   报告区域指标、Boundary 指标和样本数，不能按模型优劣事后调整分界。
 - **不确定性**：二分类 softmax 前景概率计算 binary predictive entropy（自然对数，单位 nats），
-  保存每 tile 的平均熵、错误像素上的平均熵及 95 分位数，并计算熵与 tile 错误率的 Pearson
-  相关。无错误像素的 tile 不参与“错误像素平均熵”相关分析；相关性是描述性证据，不是校准
-  或因果证明。
+  保存每 tile 的平均熵、错误像素上的平均熵及 95 分位数。当前表格和散点图中的 Pearson
+  相关使用错误像素上的平均熵与 tile 错误率；无错误像素的 tile 不参与该条件熵相关分析。
+  该相关性是描述性证据，不是困难 tile 排序、校准或因果证明。
 
 默认分析 M4 与 L1/M5 的 `41/42/43` 三个 seed；单通道 S1–S4 完成训练后，可用同一脚本将
 `DIAGNOSTIC_CONFIG`、`DIAGNOSTIC_RUN_ROOT` 和 `DIAGNOSTIC_IDS` 切换到补充协议。输出目录为

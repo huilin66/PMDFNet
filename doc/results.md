@@ -224,9 +224,9 @@ M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中�
 
 ### 9.1 Test 总体汇总表
 
-下表为公开 Test 的 133 个 tile，数值为 seed 41/42/43 的均值 `+/-` 总体标准差。M4 和 L1 是正式结果参照；S1–S4 是单通道移除补充消融。Boundary 使用 2 像素匹配容差；Entropy-error `r` 为逐 tile 平均预测熵与 tile 错误率的 Pearson 相关，仅作描述性结果。
+下表为公开 Test 的 133 个 tile，数值为 seed 41/42/43 的均值 `+/-` 总体标准差。M4 和 L1 是正式结果参照；S1–S4 是单通道移除补充消融。Boundary 使用 2 像素匹配容差；Entropy-error `r` 为错误像素上的平均预测熵与 tile 错误率的 Pearson 相关，仅作描述性结果，不表示全 tile 平均熵与错误率的关系，也不用于困难 tile 排序。
 
-| Model | Removed band | mIoU | IoU_FG | F1 | Boundary F1 | Boundary IoU | Entropy-error r |
+| Model | Removed band | mIoU | IoU_FG | F1 | Boundary F1 | Boundary IoU | Error-pixel entropy-error-rate r |
 |---|---|---:|---:|---:|---:|---:|---:|
 | M4 | - | 0.8470 +/- 0.0082 | 0.7998 +/- 0.0108 | 0.8887 +/- 0.0066 | 0.6321 +/- 0.0153 | 0.3965 +/- 0.0121 | -0.5932 +/- 0.0080 |
 | L1 | - | 0.8594 +/- 0.0028 | 0.8166 +/- 0.0034 | 0.8990 +/- 0.0020 | 0.6366 +/- 0.0015 | 0.4033 +/- 0.0024 | -0.5272 +/- 0.0178 |
@@ -264,7 +264,7 @@ M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中�
 
 逐 tile 分布的均值和标准差由 133 个 Test tile 计算，再对三个 seed 汇总；完整 TP/FP/FN/TN、每 tile 指标和图形见本地 [`per_tile.csv`](../outputs_experiments/test_diagnostics/per_tile.csv)、[`per_tile_distributions.csv`](../outputs_experiments/test_diagnostics/per_tile_distributions.csv) 以及单通道目录中的对应文件。
 
-| Model | Mean entropy (nats) | Error-pixel entropy (nats) | Entropy-error r |
+| Model | Mean entropy (nats) | Error-pixel entropy (nats) | Error-pixel entropy-error-rate r |
 |---|---:|---:|---:|
 | M4 | 0.0971 +/- 0.0095 | 0.4598 +/- 0.0163 | -0.5932 +/- 0.0080 |
 | L1 | 0.0846 +/- 0.0073 | 0.4383 +/- 0.0119 | -0.5272 +/- 0.0178 |
