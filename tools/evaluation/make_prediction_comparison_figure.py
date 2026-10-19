@@ -27,6 +27,13 @@ FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
 )
 
+HEADER_FONT_CANDIDATES = (
+    "C:/Windows/Fonts/timesbi.ttf",
+    "C:/Windows/Fonts/georgiaz.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSerif-BoldItalic.ttf",
+)
+
 
 def save_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -125,20 +132,72 @@ def load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def labeled_image(path: Path, label: str, scale: int) -> Image.Image:
+def load_header_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    for raw_path in HEADER_FONT_CANDIDATES:
+        path = Path(raw_path)
+        if path.is_file():
+            try:
+                return ImageFont.truetype(str(path), size=size)
+            except OSError:
+                continue
+    return load_font(size)
+
+
+def prepare_image(path: Path, scale: int) -> Image.Image:
     image = Image.open(path).convert("RGB")
     if scale != 1:
         image = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
-    font = load_font(max(28, 24 * scale))
+    return image
+
+
+def compose_grid(rows: list[list[Image.Image]], labels: list[str], scale: int) -> Image.Image:
+    """Compose a single-header, white-gutter grid matching the reference style."""
+
+    if not rows or not labels:
+        raise ValueError("Cannot compose an empty comparison grid")
+    if any(len(row) != len(labels) for row in rows):
+        raise ValueError("Every grid row must have one image per header label")
+
+    gutter = max(4, 2 * scale)
+    border = max(2, scale)
+    column_widths = [max(row[index].width for row in rows) for index in range(len(labels))]
+    row_heights = [max(image.height for image in row) for row in rows]
+    header_font = load_header_font(max(24, 18 * scale))
     probe = ImageDraw.Draw(Image.new("RGB", (1, 1), "white"))
-    bbox = probe.multiline_textbbox((0, 0), str(label), font=font, spacing=2 * scale)
-    text_height = bbox[3] - bbox[1]
-    padding = max(10, 5 * scale)
-    label_height = max(48, text_height + 2 * padding)
-    canvas = Image.new("RGB", (image.width, image.height + label_height), "white")
-    canvas.paste(image, (0, label_height))
+    text_heights = [
+        probe.textbbox((0, 0), label, font=header_font)[3]
+        - probe.textbbox((0, 0), label, font=header_font)[1]
+        for label in labels
+    ]
+    header_height = max(46, max(text_heights) + 2 * max(8, 4 * scale))
+    grid_width = sum(column_widths) + gutter * (len(labels) - 1)
+    grid_height = sum(row_heights) + gutter * (len(rows) - 1)
+    canvas = Image.new(
+        "RGB",
+        (2 * border + grid_width, border + header_height + gutter + grid_height + border),
+        "white",
+    )
     draw = ImageDraw.Draw(canvas)
-    draw.multiline_text((padding, padding // 2), label, fill="black", font=font, spacing=2 * scale)
+
+    x = border
+    for index, label in enumerate(labels):
+        bbox = draw.textbbox((0, 0), label, font=header_font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = x + (column_widths[index] - text_width) / 2 - bbox[0]
+        text_y = border + (header_height - text_height) / 2 - bbox[1]
+        draw.text((text_x, text_y), label, fill="black", font=header_font)
+        x += column_widths[index] + gutter
+
+    y = border + header_height + gutter
+    for row, row_height in zip(rows, row_heights):
+        x = border
+        for index, image in enumerate(row):
+            y_offset = (row_height - image.height) // 2
+            x_offset = (column_widths[index] - image.width) // 2
+            canvas.paste(image, (x + x_offset, y + y_offset))
+            x += column_widths[index] + gutter
+        y += row_height + gutter
     return canvas
 
 
@@ -163,45 +222,25 @@ def main(argv=None) -> int:
     output_path = Path(args.output).expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model_ids = list(model_dirs)
-    rows: list[Image.Image] = []
+    rows: list[list[Image.Image]] = []
     for image_name in images:
         reference_dir = maps[model_ids[0]][image_name]
         columns = [
-            labeled_image(reference_dir / "rgb.png", "RGB", args.scale),
-            labeled_image(reference_dir / "slope.png", "Slope", args.scale),
-            labeled_image(reference_dir / "gt.png", "GT", args.scale),
+            prepare_image(reference_dir / "rgb.png", args.scale),
+            prepare_image(reference_dir / "slope.png", args.scale),
+            prepare_image(reference_dir / "gt.png", args.scale),
         ]
         for model_id in model_ids:
             columns.append(
-                labeled_image(
+                prepare_image(
                     maps[model_id][image_name] / "pred.png",
-                    f"{model_id}\nPrediction",
                     args.scale,
                 )
             )
-        row_width = sum(item.width for item in columns)
-        row_height = max(item.height for item in columns)
-        row_image = Image.new("RGB", (row_width, row_height), "white")
-        x = 0
-        for item in columns:
-            row_image.paste(item, (x, 0))
-            x += item.width
-        rows.append(row_image)
+        rows.append(columns)
 
-    title_font = load_font(max(28, 20 * args.scale))
-    title_probe = ImageDraw.Draw(Image.new("RGB", (1, 1), "white"))
-    title = f"Prediction comparison | RGB | Slope | GT | {', '.join(model_ids)} Prediction | samples: {len(images)}"
-    title_bbox = title_probe.textbbox((0, 0), title, font=title_font)
-    title_height = max(64, title_bbox[3] - title_bbox[1] + 2 * max(10, 5 * args.scale))
-    sheet_width = max(row.width for row in rows)
-    sheet_height = title_height + sum(row.height for row in rows)
-    sheet = Image.new("RGB", (sheet_width, sheet_height), "white")
-    draw = ImageDraw.Draw(sheet)
-    draw.text((max(10, 5 * args.scale), max(8, 4 * args.scale)), title, fill="black", font=title_font)
-    y = title_height
-    for row in rows:
-        sheet.paste(row, (0, y))
-        y += row.height
+    display_columns = ["RGB", "Slope", "GT"] + model_ids
+    sheet = compose_grid(rows, display_columns, args.scale)
     sheet.save(output_path)
 
     manifest = {
@@ -215,6 +254,12 @@ def main(argv=None) -> int:
         },
         "output": str(output_path),
         "columns": ["RGB", "Slope", "GT"] + [f"{model_id} Prediction" for model_id in model_ids],
+        "display_columns": display_columns,
+        "layout": {
+            "style": "single header row with white gutters",
+            "repeat_labels_per_row": False,
+            "header_explains_panels": "Model IDs label prediction panels; the figure caption specifies the prediction view.",
+        },
         "legend": {
             "slope": "per-tile 2--98 percentile-scaled raw MMLSv2 Slope band (channel index 1)",
             "gt": "ground-truth binary segmentation mask; white=foreground and black=background",
