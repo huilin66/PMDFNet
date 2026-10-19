@@ -1,0 +1,10 @@
+{
+  "components": [
+    "raw",
+    "adjacent_difference",
+    "normalized_difference",
+    "group_statistics",
+    "cross_group_nd"
+  ],
+  "eps": 1e-06
+}

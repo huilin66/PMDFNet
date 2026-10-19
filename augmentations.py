@@ -230,9 +230,13 @@ class MarsAugmentor:
     3. Random Resized Crop (Zoom In/Out) - Careful with resolution
     4. Gaussian Noise injection (to specific channels)
     """
-    def __init__(self, prob=0.5, bands=7):
+    def __init__(self, prob=0.5, bands=7, channel_indices=None):
         self.prob = prob
         self.bands = bands
+        # ``image`` may be a modality subset (for example, 4 optical or 3
+        # physical channels).  Keep the original source-channel indices so
+        # channel-specific noise remains valid after sub-selection.
+        self.channel_indices = list(channel_indices) if channel_indices is not None else list(range(bands))
         # self.mmlsv2_color_jitter = MMLSv2ColorJitter()
         self.mmlsv2_random_resized_crop = MMLSv2RandomResizedCropv2()
         
@@ -264,7 +268,12 @@ class MarsAugmentor:
         if torch.rand(1) < 0.2:
             noise = torch.randn_like(image) * 0.02
             # Apply mainly to DEM (2) and Visuals (5,6)
-            mask_noise = torch.tensor([0, 0, 1, 0, 0, 1, 1]).view(7, 1, 1).to(image.device) if self.bands == 7 else torch.tensor([0, 0, 0]).view(3, 1, 1).to(image.device)
+            noise_source_channels = {2, 5, 6}
+            mask_noise = torch.tensor(
+                [1.0 if channel in noise_source_channels else 0.0 for channel in self.channel_indices],
+                dtype=image.dtype,
+                device=image.device,
+            ).view(-1, 1, 1)
             image = image + noise * mask_noise
         
         # 4. MMLSv2 Color Jitter

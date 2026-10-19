@@ -1,4 +1,5 @@
 *.pyc
+__pycache__/
 
 *.jpg
 *.png
@@ -9,5 +10,17 @@
 *.csv
 *.zip
 
+.env
+
 outputs/
+outputs_*/
+outputs_ablation/
+outputs_ablation_*/
+outputs_experiments/
 ana/
+
+anasis_report.md
+demo.py
+
+.vscode/
+data/

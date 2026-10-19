@@ -4,6 +4,11 @@ import shutil
 import sys
 import zipfile
 from datetime import datetime
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np
 import tifffile
@@ -13,10 +18,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from dataset import MarsSegDatasetInferV0, MarsSegDatasetInferV1
+from env_utils import get_data_root
 from networks import get_model
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 
 def generate_submission(
     model_name,
@@ -158,7 +161,7 @@ def generate_submission(
 
 if __name__ == "__main__":
     pass
-    root = (
+    root = get_data_root(
         "/scrinvme/huilin/bdd/cp_data/mars_seg/Mars_LSc_2025_dataset_1st_phase_updateB2"
     )
     outputs = r"/localnvme/project/M3LSNet/outputs"

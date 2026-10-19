@@ -1,0 +1,76 @@
+{
+  "protocol_version": "pmdfnet_mmlsv2_robustness_v1",
+  "description": "Frozen public-Test robustness protocol. Perturbations are applied after the fixed MARS test normalization, before selecting model input channels. Zeroing a channel therefore replaces it with normalized zero (the test normalization mean in raw space).",
+  "split": "test",
+  "source_protocol": "configs/mmlsv2_paper_protocol.json",
+  "default_model_ids": ["M4", "L1"],
+  "default_seeds": [41, 42, 43],
+  "random_seed": 20261018,
+  "channel_names": {
+    "0": "Thermal",
+    "1": "Slope",
+    "2": "DEM",
+    "3": "Grayscale",
+    "4": "R",
+    "5": "G",
+    "6": "B"
+  },
+  "conditions": [
+    {
+      "id": "dem_offset",
+      "kind": "additive_offset",
+      "channels": [2],
+      "units": "normalized_test_space",
+      "levels": [
+        {"name": "light", "value": 0.25},
+        {"name": "medium", "value": 0.50},
+        {"name": "strong", "value": 1.00}
+      ],
+      "hypothesis": "Performance sensitivity to a systematic DEM bias."
+    },
+    {
+      "id": "dem_noise",
+      "kind": "gaussian_noise",
+      "channels": [2],
+      "units": "normalized_test_space_std",
+      "levels": [
+        {"name": "light", "value": 0.10},
+        {"name": "medium", "value": 0.25},
+        {"name": "strong", "value": 0.50}
+      ],
+      "hypothesis": "Performance sensitivity to random DEM measurement noise."
+    },
+    {
+      "id": "optical_noise",
+      "kind": "gaussian_noise",
+      "channels": [3, 4, 5, 6],
+      "units": "normalized_test_space_std",
+      "levels": [
+        {"name": "light", "value": 0.10},
+        {"name": "medium", "value": 0.25},
+        {"name": "strong", "value": 0.50}
+      ],
+      "hypothesis": "Performance sensitivity to random optical-channel noise."
+    },
+    {
+      "id": "missing_physical",
+      "kind": "zero_channels",
+      "channels": [0, 1, 2],
+      "units": "normalized_test_space_zero",
+      "levels": [
+        {"name": "all", "value": 1.0}
+      ],
+      "hypothesis": "Robustness when Thermal/Slope/DEM are unavailable."
+    },
+    {
+      "id": "missing_optical",
+      "kind": "zero_channels",
+      "channels": [3, 4, 5, 6],
+      "units": "normalized_test_space_zero",
+      "levels": [
+        {"name": "all", "value": 1.0}
+      ],
+      "hypothesis": "Robustness when Grayscale/R/G/B are unavailable."
+    }
+  ]
+}

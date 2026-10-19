@@ -182,6 +182,50 @@ class MarsSegDataset(data.Dataset):
         return image_t, mask_t
 
 
+class MMLSV2Dataset(MarsSegDataset):
+    """Dataset for mmlsv2 released data which is already normalized to [0, 1].
+
+    Inherits MarsSegDataset but removes the mean/std normalization step.
+    """
+
+    def __init__(self, root_dir, split="train", size=128, val_ana=False):
+        super().__init__(root_dir, split, size, val_ana)
+        # Disable normalization: mmlsv2 data is pre-normalized to [0, 1]
+        self.mean = None
+        self.std = None
+
+    def __getitem__(self, index):
+        image_name = self.images[index]
+        image_path = os.path.join(self.images_dir, image_name)
+        try:
+            image = tifffile.imread(image_path).astype(np.float32)
+        except Exception as e:
+            print(f"Error loading {image_path}: {e}")
+            return torch.zeros(7, self.size, self.size), torch.zeros(
+                self.size, self.size
+            ).long()
+        if image.ndim == 3 and image.shape[2] == 7:
+            image = image.transpose(2, 0, 1)
+        image[image < -100000] = 0.0
+        # No mean/std normalization for mmlsv2 data
+
+        if self.split == "test":
+            return torch.from_numpy(image).float(), image_name
+        if index < len(self.masks):
+            mask_name = self.masks[index]
+            mask_path = os.path.join(self.masks_dir, mask_name)
+            mask = tifffile.imread(mask_path).astype(np.float32)
+        else:
+            mask = np.zeros((self.size, self.size))
+
+        image_t = torch.from_numpy(image).float()
+        mask_t = torch.from_numpy(mask).long()
+
+        if self.augmentor is not None:
+            image_t, mask_t = self.augmentor(image_t, mask_t)
+        return image_t, mask_t
+
+
 class MarsSegDatasetInferV0(data.Dataset):
     def __init__(self, root_dir, split="train", size=128, val_ana=False):
         """

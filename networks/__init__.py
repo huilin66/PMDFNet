@@ -34,7 +34,14 @@ def get_model(model_name, in_channels=7, num_classes=2):
     返回:
     - model
     """
-    print(f"loading {model_name}...")
+    requested_model_name = model_name
+    # PMDFNet is the current paper-facing name.  Historical
+    # ``dual_segformer_*`` identifiers remain valid for old checkpoints and
+    # reproduction scripts.
+    if model_name.startswith("pmdfnet_"):
+        model_name = "dual_segformer_" + model_name[len("pmdfnet_") :]
+
+    print(f"loading {requested_model_name}...")
 
     if model_name == "deeplabv3p_resnest50":
         return smp.DeepLabV3Plus(

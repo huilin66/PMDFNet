@@ -1,0 +1,31 @@
+{
+  "common": {
+    "output_dir": "outputs_pmdfnet_ablation",
+    "epochs": 100,
+    "batch_size": 16,
+    "lr": 0.0001,
+    "weight_decay": 0.0005,
+    "optimizer": "adamw",
+    "scheduler": "cosine",
+    "loss": "unetformer",
+    "augmentation": "mars",
+    "mosaic_prob": 0.5,
+    "val_interval": 1,
+    "seed": 42
+  },
+  "experiments": [
+    {
+      "experiment_name": "baseline_segformer_convnexttiny",
+      "model_name": "segformer_convnexttiny",
+      "batch_size": 32
+    },
+    {
+      "experiment_name": "pmdfnet_convnexttiny_chv1_add",
+      "model_name": "pmdfnet_convnexttiny_chv1_add"
+    },
+    {
+      "experiment_name": "pmdfnet_convnextsmall_chv1_add",
+      "model_name": "pmdfnet_convnextsmall_chv1_add"
+    }
+  ]
+}

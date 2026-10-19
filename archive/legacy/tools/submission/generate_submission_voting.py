@@ -4,6 +4,11 @@ import shutil
 import sys
 import zipfile
 from datetime import datetime
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np
 import tifffile
@@ -13,10 +18,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from dataset import MarsSegDatasetInferV0, MarsSegDatasetInferV1, MarsSegDatasetInferV2
+from env_utils import get_data_root
 from networks import get_model
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 
 def run_inference_for_model(
     model_name, checkpoint_path, data_root, temp_dir, augs, device, ana=False
@@ -194,8 +197,7 @@ def main(ana=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # TODO: update path
-    data_root = (
+    data_root = get_data_root(
         "/scrinvme/huilin/bdd/cp_data/mars_seg/Mars_LSc_2025_dataset_1st_phase_updateB2"
     )
     # data_root = "/scrinvme/huilin/bdd/cp_data/mars_seg/Mars_LSc_2025_test_data_2nd_phase_updateB2"

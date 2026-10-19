@@ -350,7 +350,7 @@ if __name__ == "__main__":
         gt_dir="/scrinvme/huilin/bdd/cp_data/mars_seg/Mars_LSc_2025_dataset_1st_phase_updateB2/val/masks",
         pred_dirs_dict={
             "SegFormer": "ana/segformer_convnexttiny",
-            "DualSegFormer": "ana/dual_segformer_convnexttiny_chv1_add",
+            "PMDFNet": "ana/dual_segformer_convnexttiny_chv1_add",
             "Ensemble": "ana/ensemble_temp_files/soft_voting_masks",
         },
         output_dir="./vis_models",
