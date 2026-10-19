@@ -1,10 +1,10 @@
 """Grad-CAM analysis for frozen PMDFNet checkpoints.
 
 This is the PMDFNet/PyTorch counterpart of the MRSN CAM analysis workflow.
-It produces one reproducible directory per selected image containing RGB, GT,
-prediction, FP/FN and Grad-CAM views.  Model construction and checkpoint
-loading are delegated to the formal evaluation code, so CAM is an analysis of
-the trained paper model rather than a second model implementation.
+It produces one reproducible directory per selected image containing RGB,
+Slope, GT, prediction, FP/FN and Grad-CAM views.  Model construction and
+checkpoint loading are delegated to the formal evaluation code, so CAM is an
+analysis of the trained paper model rather than a second model implementation.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ from tools.evaluation.interpretability_common import (  # noqa: E402
     rgb_preview,
     safe_name,
     save_json,
+    slope_preview,
 )
 from tools.evaluation.paper_run_utils import (  # noqa: E402
     load_protocol,
@@ -68,7 +70,35 @@ def parse_args(argv=None) -> argparse.Namespace:
         default="gt_mask",
         help="Spatial target used to pool the selected class logit.",
     )
-    parser.add_argument("--class-id", type=int, default=1)
+    parser.add_argument(
+        "--target-mode",
+        choices=("mixed", "fixed"),
+        default="mixed",
+        help="mixed assigns mostly foreground and a small deterministic background subset; fixed uses one class for every image.",
+    )
+    parser.add_argument(
+        "--foreground-class-id",
+        "--class-id",
+        dest="foreground_class_id",
+        type=int,
+        default=1,
+        help="Foreground class used by mixed mode and the legacy --class-id alias.",
+    )
+    parser.add_argument("--background-class-id", type=int, default=0)
+    parser.add_argument(
+        "--background-ratio",
+        type=float,
+        default=0.25,
+        help="Fraction of selected samples assigned to the background CAM in mixed mode. Default: 0.25.",
+    )
+    parser.add_argument(
+        "--target-plan",
+        default="",
+        help=(
+            "Optional text file for sample-specific CAM classes. Supports 'image.tif: 1' "
+            "and '0: image_a.tif,image_b.tif' lines; foreground/background names are accepted."
+        ),
+    )
     parser.add_argument(
         "--selection",
         choices=("fixed", "all", "lowest_miou", "highest_miou"),
@@ -186,6 +216,137 @@ def choose_indices(
     }
 
 
+def parse_class_token(value: str, args: argparse.Namespace) -> int:
+    """Parse an integer class id or the readable foreground/background names."""
+
+    token = value.strip()
+    token = re.split(r"[/,;\s]+", token, maxsplit=1)[0].strip().lower()
+    if token in {"foreground", "fore", "fg"}:
+        return int(args.foreground_class_id)
+    if token in {"background", "back", "bg"}:
+        return int(args.background_class_id)
+    try:
+        return int(token)
+    except ValueError as exc:
+        raise ValueError(f"Invalid CAM class token: {value!r}") from exc
+
+
+def parse_target_plan(
+    path: Path,
+    dataset: MappedLabeledDataset,
+    args: argparse.Namespace,
+) -> list[tuple[int, int]]:
+    """Read a deterministic sample/class plan in either sample-first or class-first form."""
+
+    name_to_index = {item.name: index for index, item in enumerate(dataset.image_files)}
+    result: list[tuple[int, int]] = []
+    seen: set[int] = set()
+    for line_no, raw_line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            left, right = line.split(":", 1)
+        elif "：" in line:
+            left, right = line.split("：", 1)
+        else:
+            left, right = line, "all"
+        left = left.strip()
+        right = right.strip()
+
+        if left in name_to_index:
+            image_names = [left]
+            class_id = parse_class_token(right, args)
+        else:
+            class_id = parse_class_token(left, args)
+            if right.lower() in {"", "all", "*"}:
+                image_names = [dataset.image_files[index].name for index in range(len(dataset))]
+            else:
+                image_names = [item for item in re.split(r"[,;\s]+", right) if item]
+
+        for image_name in image_names:
+            if image_name not in name_to_index:
+                raise FileNotFoundError(
+                    f"Target plan line {line_no} references missing {dataset.split} image: {image_name}"
+                )
+            index = name_to_index[image_name]
+            if index in seen:
+                raise ValueError(f"Target plan assigns more than one CAM class to {image_name}")
+            seen.add(index)
+            result.append((index, class_id))
+
+    if not result:
+        raise ValueError(f"Target plan is empty: {path}")
+    return result
+
+
+def build_target_specs(
+    dataset: MappedLabeledDataset,
+    indices: list[int],
+    args: argparse.Namespace,
+) -> tuple[list[tuple[int, int]], dict]:
+    """Return (dataset index, class id) pairs used for CAM, independent of model predictions."""
+
+    if args.target_plan:
+        plan_path = Path(args.target_plan).expanduser().resolve()
+        if not plan_path.is_file():
+            raise FileNotFoundError(f"CAM target plan not found: {plan_path}")
+        specs = parse_target_plan(plan_path, dataset, args)
+        return specs, {
+            "rule": "explicit_sample_class_plan",
+            "path": str(plan_path),
+            "model_independent": True,
+        }
+
+    if args.target_mode == "fixed":
+        return [(index, int(args.foreground_class_id)) for index in indices], {
+            "rule": "fixed_class",
+            "class_id": int(args.foreground_class_id),
+            "model_independent": True,
+        }
+
+    if not 0.0 <= args.background_ratio <= 1.0:
+        raise ValueError("--background-ratio must be between 0 and 1")
+    if args.foreground_class_id == args.background_class_id:
+        raise ValueError("Foreground and background class ids must be different")
+
+    background_count = int(round(len(indices) * args.background_ratio))
+    if len(indices) > 1 and args.background_ratio > 0:
+        background_count = max(1, background_count)
+        background_count = min(background_count, len(indices) - 1)
+    rng = np.random.default_rng(args.selection_seed)
+    background_positions = set(
+        rng.choice(len(indices), size=background_count, replace=False).tolist()
+        if background_count > 0
+        else []
+    )
+    specs = [
+        (
+            index,
+            int(args.background_class_id if position in background_positions else args.foreground_class_id),
+        )
+        for position, index in enumerate(indices)
+    ]
+    return specs, {
+        "rule": "fixed_seeded_mixed_class_plan",
+        "selection_seed": args.selection_seed,
+        "foreground_class_id": int(args.foreground_class_id),
+        "background_class_id": int(args.background_class_id),
+        "background_ratio": float(args.background_ratio),
+        "background_count": background_count,
+        "foreground_count": len(specs) - background_count,
+        "model_independent": True,
+    }
+
+
+def cam_class_role(class_id: int, args: argparse.Namespace) -> str:
+    if class_id == args.foreground_class_id:
+        return "foreground"
+    if class_id == args.background_class_id:
+        return "background"
+    return f"class_{class_id}"
+
+
 def target_mask(
     mode: str,
     prediction: torch.Tensor,
@@ -268,8 +429,10 @@ def save_sample(
     sample_dir.mkdir(parents=True, exist_ok=True)
     output_size = (int(prediction.shape[1]), int(prediction.shape[0]))
     rgb = rgb_preview(source, output_size=output_size)
+    slope = slope_preview(source, output_size=output_size)
     overlay, gray = overlay_cam(rgb, cam)
     Image.fromarray(rgb, mode="RGB").save(sample_dir / "rgb.png")
+    Image.fromarray(slope, mode="RGB").save(sample_dir / "slope.png")
     Image.fromarray(binary_preview(target), mode="RGB").save(sample_dir / "gt.png")
     Image.fromarray(binary_preview(prediction), mode="RGB").save(sample_dir / "pred.png")
     Image.fromarray(fp_fn_preview(prediction, target), mode="RGB").save(sample_dir / "fp_fn.png")
@@ -296,13 +459,24 @@ def main(argv=None) -> int:
         normalization=normalization,
         resize_to=resize_to,
     )
-    if args.class_id < 0 or args.class_id >= int(config_payload.get("num_classes", 2)):
-        raise ValueError(f"class-id {args.class_id} is outside the model class range")
+    num_classes = int(config_payload.get("num_classes", 2))
+    for option_name, class_id in (
+        ("foreground-class-id", args.foreground_class_id),
+        ("background-class-id", args.background_class_id),
+    ):
+        if class_id < 0 or class_id >= num_classes:
+            raise ValueError(f"{option_name} {class_id} is outside the model class range")
 
     indices, selection = choose_indices(dataset, model, device, args)
     if not indices:
         raise RuntimeError("No images selected")
-    probe = dataset[indices[0]][0].unsqueeze(0).to(device)
+    target_specs, target_selection = build_target_specs(dataset, indices, args)
+    if not target_specs:
+        raise RuntimeError("No CAM target samples selected")
+    for _index, cam_class_id in target_specs:
+        if cam_class_id < 0 or cam_class_id >= num_classes:
+            raise ValueError(f"CAM target class {cam_class_id} is outside the model class range")
+    probe = dataset[target_specs[0][0]][0].unsqueeze(0).to(device)
     layer_name, layer = find_spatial_layer(model, probe, args.cam_layer)
     hook = SpatialHook(layer, with_gradient=True)
 
@@ -314,7 +488,7 @@ def main(argv=None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     records = []
     try:
-        for rank, index in enumerate(indices, start=1):
+        for rank, (index, cam_class_id) in enumerate(target_specs, start=1):
             image, target, image_name = dataset[index]
             image_device = image.unsqueeze(0).to(device)
             with torch.enable_grad():
@@ -325,9 +499,9 @@ def main(argv=None) -> int:
                     args.cam_target,
                     prediction_tensor,
                     target.to(device),
-                    args.class_id,
+                    cam_class_id,
                 )
-                cam = grad_cam(model, hook, image_device[0], args.class_id, mask_tensor)
+                cam = grad_cam(model, hook, image_device[0], cam_class_id, mask_tensor)
             prediction = prediction_tensor.detach().cpu().numpy().astype(np.uint8)
             target_np = target.numpy().astype(np.uint8)
             cam_mask = mask_tensor.detach().cpu().numpy().astype(np.uint8)
@@ -347,15 +521,28 @@ def main(argv=None) -> int:
                 "normalization": normalization,
                 "resize_to": resize_to,
                 "cam_layer": layer_name,
-                "cam_class": args.class_id,
+                "cam_class": cam_class_id,
+                "cam_role": cam_class_role(cam_class_id, args),
                 "cam_target": args.cam_target,
                 "cam_target_fallback_to_full_image": fallback,
                 "selection": selection,
                 "metrics": metrics,
             }
             save_sample(sample_dir, dataset.source(index), target_np, prediction, cam, cam_mask, metadata)
-            records.append({"rank": rank, "index": index, "image": image_name, "sample_dir": str(sample_dir), **metrics})
-            print(f"[{rank}/{len(indices)}] {image_name} mIoU={metrics['miou']:.4f}", flush=True)
+            records.append(
+                {
+                    "rank": rank,
+                    "index": index,
+                    "image": image_name,
+                    "sample_dir": str(sample_dir),
+                    "cam_class": cam_class_id,
+                    "cam_role": cam_class_role(cam_class_id, args),
+                    "cam_target": args.cam_target,
+                    "cam_target_fallback_to_full_image": fallback,
+                    **metrics,
+                }
+            )
+            print(f"[{rank}/{len(target_specs)}] {image_name} ({cam_class_role(cam_class_id, args)}) mIoU={metrics['miou']:.4f}", flush=True)
     finally:
         hook.close()
 
@@ -375,13 +562,17 @@ def main(argv=None) -> int:
         "normalization": normalization,
         "resize_to": resize_to,
         "cam_layer": layer_name,
-        "cam_class": args.class_id,
+        "cam_class": "per_sample",
+        "foreground_class_id": args.foreground_class_id,
+        "background_class_id": args.background_class_id,
         "cam_target": args.cam_target,
         "selection": selection,
+        "target_selection": target_selection,
         "legend": {
             "cam_overlay": "RGB preview blended with a jet Grad-CAM heatmap; red/yellow indicates larger positive contribution",
+            "slope": "per-tile 2--98 percentile-scaled raw MMLSv2 Slope band (channel index 1)",
             "fp_fn": "red=false positive, blue=false negative, gray=true positive",
-            "cam_target": "spatial region pooled from the selected class logit; empty targets fall back to the full image",
+            "cam_target": "spatial region pooled from the per-sample selected class logit; empty targets fall back to the full image",
         },
         "samples": records,
     }

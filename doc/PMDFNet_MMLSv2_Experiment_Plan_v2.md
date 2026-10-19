@@ -11,7 +11,7 @@
 > **实验范围**：仅包含 MMLSv2；Landslide4Sense 另立计划。  
 > **状态**：以 `configs/mmlsv2_paper_protocol.json`（`pmdfnet_mmlsv2_remote_sensing_v5_ce_only_groups_split`）和当前 `scripts/`、`tools/evaluation/` 实现为执行蓝本；参数、样本映射与预训练来源须经 E0/实现核验后最终冻结。
 
-> **实现对齐说明（2026-10-19）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。E7 CAM/原型 t-SNE 已在 A100 上完成 M4 与 L1/M5、seed 41 的冻结 Test 分析并归档。新增的单通道训练协议已在 A100-1 完成 S1–S4 × `41/42/43` 共 12 个 run；Test 诊断已完成 M4/L1 共 6 个冻结 run 和 S1–S4 共 12 个冻结 run，结果分别归档于 `outputs_experiments/test_diagnostics/` 与 `outputs_experiments/test_diagnostics_single_channel/`。
+> **实现对齐说明（2026-10-19）**：本文档中旧版计划与当前代码不一致的地方，以 protocol v5、`configs/mmlsv2_robustness_protocol.json` 和实际运行脚本为准。当前正式矩阵使用 batch size `32`，主模型 M5 由协议运行项 `L1` 实现并使用 CE-only；`L2`、`L3` 仅作为损失消融覆盖项。当前公开 Test 评估脚本使用 MARS Test 统计量。主基线复杂度由 `scripts/run_complexity_eval.sh` 统一测量；E5 已由 `scripts/run_robustness_eval.sh` 在 A100 上执行，图像级统计和定性渲染由 `scripts/run_robustness_analysis.sh` 完成。E7 已在 A100 上完成四套冻结 Test 分析：历史固定样本的 M4 与 L1/M5 分析、按 L1/M5 相对 M1/M2/M3/M10/M11 逐图像 mIoU 优势筛选的 M1/M2/M3/M10/M11 性能条件化 CAM、同一批优势样本的 RGB/Slope/GT/各模型预测实例对比，以及覆盖全部 133 张公开 Test 图像的既有 M1–M4/L1 GT 前景/背景 t-SNE，结果分别归档于历史目录与 `outputs_experiments/interpretability_selected_m1_m2_m3_m10_m11/`。新增的单通道训练协议已在 A100-1 完成 S1–S4 × `41/42/43` 共 12 个 run；Test 诊断已完成 M4/L1 共 6 个冻结 run 和 S1–S4 共 12 个冻结 run，结果分别归档于 `outputs_experiments/test_diagnostics/` 与 `outputs_experiments/test_diagnostics_single_channel/`。
 
 ## 0. 研究问题、边界与待验证主张
 
@@ -292,27 +292,38 @@ Supplementary Table 单独报告，并同时给出 Params/GFLOPs，避免把去�
 
 为复现 MRSN 中“激活区域 + 特征原型”这一类机制分析，本项目采用与 PMDFNet 结构一致的 PyTorch 实现，不直接移植 Paddle 模型代码：
 
-- `tools/evaluation/cam_analysis.py`：从正式 run 的 `config.json` 和 `best.pth` 重建模型，在指定 decoder feature layer 上计算 Grad-CAM；默认使用 Test 的 `gt_mask`、前景类 `class_id=1`，同时保存 `RGB | GT | Pred | CAM overlay | FP/FN`、CAM target mask、灰度 CAM 和逐图像 metadata。
-- `tools/evaluation/tsne_prototype_analysis.py`：对同一批固定 Test 图像提取每个模型的 GT/Pred 区域特征原型，每张图像、每个类别、每个来源各保留一个区域均值向量；联合执行维度对齐、标准化和 t-SNE，分别输出 `tsne_gt.png`、`tsne_pred.png` 和合并图。
-- `tools/evaluation/make_cam_comparison_figure.py`：只负责读取已经生成的 CAM 目录并排版，不重新推理；保证图像选择和模型输出不会因排版过程改变。
-- `scripts/run_interpretability.sh`：默认对 seed 41 的 M4 与 L1/M5 执行上述分析；输出目录为 `outputs_experiments/interpretability/`。如需扩展到更多模型或 seed，通过环境变量显式指定。
+- `tools/evaluation/cam_analysis.py`：从正式 run 的 `config.json` 和 `best.pth` 重建模型，在指定 decoder feature layer 上计算 Grad-CAM；默认使用 Test 的 `gt_mask`，按固定 `selection_seed` 为同一批样本生成**前景为主、背景为辅**的 per-sample 类别计划（默认 75% 前景、25% 背景），同时保存 `RGB`、原始 `Slope` 波段预览、GT、Pred、CAM overlay、FP/FN、CAM target mask、灰度 CAM 和逐图像 metadata。也支持 MRSN 风格的 `--target-plan`，用 `image.tif: 1` 或 `0: image_a.tif,image_b.tif` 显式冻结样本/类别。
+- `tools/evaluation/tsne_prototype_analysis.py`：默认对全部公开 Test 图像提取每个模型的 GT/Pred 区域特征原型，每张图像、每个类别、每个来源各保留一个区域均值向量；先对所选模型联合执行维度对齐、标准化和 t-SNE，再输出联合概览图和 `by_model/<model_id>.png`。后者每个模型一张图，默认使用 GT-defined regions，并以颜色区分 Background/Foreground；传入 `--ids` 可限定图像，传入 `--sources gt,pred` 时再以 marker 区分 GT/Pred。
+- `tools/evaluation/select_interpretability_samples.py`：在冻结 checkpoint 上计算逐 Test 图像 mIoU，仅为性能条件化 CAM 提供 `selected_ids.txt`；默认 t-SNE 不使用该筛选清单，而是覆盖全部 Test 图像。
+- `tools/evaluation/make_cam_comparison_figure.py`：只负责读取已经生成的 CAM 目录并排版，不重新推理；保证图像选择和模型输出不会因排版过程改变。当前对比列包含 `RGB`、`Slope`、`GT` 和 M1/M2/M3/M10/M11 的 CAM。
+- `tools/evaluation/make_prediction_comparison_figure.py`：只读取同一批 CAM 输出目录中的 `RGB`、`Slope`、`GT` 和 `Pred`，排版为实例预测对比图，不重新推理或重新选择样本。
+- `scripts/run_interpretability.sh`：默认对 seed 41 的 M1/M2/M3/M10/M11 执行性能条件化 CAM 和同批优势样本预测对比；完整 CAM/预测图使用优势样本清单中的 12 张，论文版默认由 `INTERP_PAPER_TOP_K=6` 输出最高优势的 6 张，t-SNE 保持 M1–M4/L1/M5 的全 Test 分析。设置 `INTERP_TSNE_ALL_TEST=false` 可恢复为 CAM 同批样本；输出目录由 `INTERP_OUTPUT_ROOT` 指定。
 
 固定规则如下：
 
-1. Test 图像默认由 `selection_seed=20261018` 从排序后的公开 Test 文件名中抽取，模型之间共享同一组图像；不按 Test 分数挑选 CAM 或 t-SNE 样本。若使用 `lowest_miou`/`highest_miou`，必须标记为探索性分析，不能作为正文无偏例图的选择依据。
-2. CAM 的 `gt_mask` 仅用于定位解释区域，不改变预测和评价指标；空目标区域自动回退到整幅图，并在 metadata 中记录。
-3. t-SNE 的 GT/Pred 原型来自同一图像和同一类别的空间特征均值。t-SNE 是描述性可视化，不作为显著性检验；类别、模型 marker、特征层、PCA 对齐和随机种子必须随 manifest 一起保存。
-4. 正文优先展示 M4 与 L1/M5 的同图 CAM/FP-FN 对比；M1–M3、M6–M11 的 CAM 和 t-SNE 作为补充材料或机制讨论证据。不能仅凭 CAM 热区声称模型“学习了物理因果关系”，只能描述其关注区域与错误模式的关联。
+1. CAM 默认使用**性能条件化样本**：`select_interpretability_samples.py` 在同一 Test 图像上比较目标 PMDFNet 与指定参考模型的逐图像 mIoU，只保留目标模型优势为正的样本，再按优势固定排序取前 `K` 张。这类图用于展示“PMDFNet 优势案例”，不是无偏的 Test 代表性估计。t-SNE 默认使用全部公开 Test 图像；只有设置 `INTERP_TSNE_ALL_TEST=false` 时才与 CAM 共用 `selected_ids.txt`。
+2. CAM 的 `gt_mask` 仅用于定位解释区域，不改变预测和评价指标；空目标区域自动回退到整幅图，并在 metadata 中记录。默认 CAM 类别计划由固定 seed 生成，前景样本占多数、背景样本占少数；同一计划在不同模型之间共享，不按单个模型预测或 Test 分数选择。
+3. t-SNE 的 GT/Pred 原型来自同一图像和同一类别的空间特征均值。默认覆盖全部公开 Test 图像；空类别区域在对应特征图分辨率下没有有效像素时跳过。所有选定模型先使用同一个联合 embedding，再生成每模型单独图，因此 `by_model/*.png` 的坐标仍可横向比较。t-SNE 是描述性可视化，不作为显著性检验；类别、来源 marker、特征层、PCA 对齐和随机种子必须随 manifest 一起保存。
+4. 正文优先展示两张互补的 M1/M2/M3/M10/M11 对比图：一张为 `RGB | Slope | GT | model Prediction` 实例预测汇总，另一张为 `RGB | Slope | GT | model CAM` 激活汇总；两者使用同一批性能条件化优势样本。这里的优势样本仍由 L1/M5 与这五个参考模型的逐图像 mIoU 比较确定，L1/M5 作为目标模型用于样本选择但不列入本次五模型显示集合。FP/FN、CAM target 和灰度 CAM 作为逐模型原始审计材料保留，t-SNE 继续使用既有全 Test 模型集合。预测图只支持具体案例层面的可视比较，不能替代全 Test 统计；也不能仅凭 CAM 热区声称模型“学习了物理因果关系”，只能描述其关注区域与错误模式的关联。
 
 **执行入口示例**：
 
 ```bash
 DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
-  INTERP_IDS=M4,L1 INTERP_SEED=41 INTERP_SPLIT=test \
+  INTERP_CAM_IDS=M1,M2,M3,M4,L1 INTERP_TSNE_IDS=M1,M2,M3,M4,L1 \
+  INTERP_SELECTION_TARGET_IDS=L1 INTERP_SELECTION_REFERENCE_IDS=M1,M2,M3,M4 \
+  INTERP_BACKGROUND_RATIO=0.25 INTERP_TSNE_SOURCES=gt INTERP_TSNE_ALL_TEST=true \
+  INTERP_SEED=41 INTERP_SPLIT=test \
   bash scripts/run_interpretability.sh
 ```
 
-**交付**：正文可使用的 CAM 对比图和补充材料 t-SNE 图；原始 `cam_manifest.json`、`cam_meta.csv`、`tsne_manifest.json`、`prototypes.csv` 与 `tsne_coordinates.csv` 必须归档。
+如需将多个 PMDFNet 变体与代表性基线进行 CAM 对比，直接将
+`INTERP_CAM_IDS` 设置为已冻结的正式 run 列表，例如
+`INTERP_CAM_IDS=L1,A5,C2,M4,M3`。这里的“最优”必须在分析前依据已冻结的
+Val/主表规则确定，不能根据 Test 例图临时挑选；CAM 脚本本身不会依据 Test
+分数自动选择模型。
+
+**交付**：正文可使用的预测实例对比图、CAM 对比图和补充材料 t-SNE 图；原始 `cam_manifest.json`、`cam_meta.csv`、预测对比图 manifest、`tsne_manifest.json`、`prototypes.csv` 与 `tsne_coordinates.csv` 必须归档。
 
 ---
 
@@ -432,7 +443,7 @@ Figure 7（熵—错误率关系）；正文只在统计口径和样本量清楚
 12. 输出标准化预测、全像素混淆矩阵和指标；记录当前 Test 使用 MARS Test 统计量的实现口径。
 13. 执行 `scripts/run_robustness_eval.sh` 的已冻结扰动协议，并使用 `scripts/run_robustness_analysis.sh` 完成图像级配对统计、FP/FN 失败案例和 Test 可视化；完成效率测试和多 seed 汇总。
 14. 【已完成】运行 `scripts/run_test_diagnostics.sh`，生成 M4/L1 以及 S1–S4 的 Boundary、逐 tile、前景面积分层和熵不确定性结果。
-15. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M4 vs L1/M5 的 CAM 对比和 GT/Pred 原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed 和数据 split。
+15. 在 Test 评价完成且模型/样本选择冻结后，运行 `scripts/run_interpretability.sh`，生成 M1/M2/M3/M10/M11 与 GT 的性能条件化预测实例对比、CAM 对比和既有全 Test GT 前景/背景原型 t-SNE；检查 manifest 中的 checkpoint、feature layer、selection seed、样本选择规则和数据 split。
 16. 根据实际证据撰写 Discussion；不得把 L3 的 CE + Dice 结果写成主模型 M5/L1 的 CE-only 结果，也不得把 CAM/t-SNE、Boundary 或熵相关性的描述性结果写成因果或显著性证据。
 
 > **注意**：理想流程是先在 Validation 完成各配置、checkpoint、阈值和实验矩阵的冻结，然后一次性评价 Test。不能完成一次 Test 后再决定是否增加某个更可能获胜的分组或改主模型。
@@ -454,7 +465,8 @@ Figure 7（熵—错误率关系）；正文只在统计口径和样本量清楚
 | Figure 2 | 固定选择规则下的可视化比较 | 必须 |
 | Figure 3 | 扰动等级—性能变化 | 建议 |
 | Figure 4 | 错误统计和失败案例 | 建议 |
-| Figure 5 | M4 vs M5/L1 的 CAM 与 FP/FN 同图比较 | 建议 |
+| Figure 5 | M1/M2/M3/M10/M11 与 GT 的 RGB、Slope 和 CAM 同图比较 | 建议 |
+| Figure 5a | 同一批 PMDFNet 优势样本的 RGB、Slope、GT 和各模型预测同图比较 | 建议 |
 | Figure 6 | 逐 tile 指标分布与 small/medium/large 前景面积分层 | 建议 |
 | Figure 7 | 预测熵与 tile 错误率关系 | 建议 |
 | Supplementary Table S2 | S1–S4 单通道移除消融（逐 seed 与复杂度） | 建议 |
@@ -512,17 +524,27 @@ outputs_experiments/robustness/
     qualitative_cases.json
     *.png
 
-outputs_experiments/interpretability/
-  cam/{M4,L1}_s41/
+outputs_experiments/interpretability_selected_m1_m2_m3_m10_m11/
+  selection/pmdfnet_advantage_M1_M2_M3_M10_M11_s41/
+    selection_manifest.json
+    selection_scores.csv
+    selected_samples.csv
+    selected_ids.txt
+  cam/{M1,M2,M3,M10,M11}_s41/
     cam_manifest.json
     cam_meta.csv
-    samples/rank_*/{rgb,gt,pred,cam_overlay,cam_gray,fp_fn}.png
-  cam/cam_comparison_s41.png
+    samples/rank_*/{rgb,slope,gt,pred,cam_overlay,cam_gray,fp_fn}.png
+  cam/cam_comparison_rgb_slope_gt_s41.png
+  cam/prediction_comparison_rgb_slope_gt_s41.png
+  cam/cam_comparison_rgb_slope_gt_s41_n6.png
+  cam/prediction_comparison_rgb_slope_gt_s41_n6.png
   tsne/M4,L1_s41/
     tsne_manifest.json
     prototypes.csv
     tsne_coordinates.csv
-    tsne_{all,gt,pred}.png
+    tsne_all.png
+    tsne_gt.png                 # default; tsne_pred.png is added when requested
+    by_model/{M1,M2,M3,M4,L1}.png
 
 outputs_experiments/test_diagnostics/
   diagnostics_manifest.json
@@ -568,7 +590,7 @@ outputs_experiments/test_diagnostics_single_channel/
 - [x] Test 定性样本按固定 seed、固定规则和双向案例类别选择；失败案例不只展示单方面有利样本。
 - [x] 已运行并归档 `run_complexity_eval.sh` 的 Params/GFLOPs/FPS/latency/显存结果。
 - [x] 已运行并归档 E5 的 clean/扰动指标、图像级 bootstrap/配对检验以及 FP/FN 定性 PNG。
-- [x] 已在冻结 Test 样本规则下运行并归档 M4/L1 seed 41 的 CAM 对比图、GT/Pred 原型 t-SNE 及其 manifest；未把解释性图误写成显著性或因果证据。
+- [x] 已在冻结 Test 样本规则下运行并归档历史 M4/L1 seed 41 的 CAM/GT-Pred 原型 t-SNE，以及按 L1/M5 相对 M1/M2/M3/M10/M11 逐图像 mIoU 优势筛选的 M1/M2/M3/M10/M11 seed 41 CAM 和预测实例对比；完整归档保留 12 张优势样本，论文版 CAM 和预测图按优势排序展示前 6 张，并增加 GT 列；当前两类对比图分别采用 `RGB | Slope | GT | 各模型 CAM` 和 `RGB | Slope | GT | 各模型 Prediction` 排版，未把解释性图误写成显著性或因果证据。
 - [x] 已运行并归档 Boundary 指标、逐 tile 分布、前景面积分层和熵不确定性分析；已固定 2 像素 Boundary 容差和 3 组面积分层规则。
 - [ ] 已记录 M11 实际使用的 `mamba_ssm_selective_scan` 或 `gated_conv_simulator` 后端。
 - [ ] 正式冻结前工作树为 clean commit；若沿用历史 dirty run，已归档 `git diff HEAD`、未跟踪文件、环境信息和原始输出，并明确标注 dirty-snapshot。

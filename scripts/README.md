@@ -29,7 +29,7 @@
 | `run_complexity_eval.sh` | 对冻结的主基线统一测量 Params、GFLOPs、前向延迟/FPS 和峰值推理显存 |
 | `run_robustness_eval.sh` | 对 M4 与 L1/M5 执行 clean + 5 个固定 Test 扰动/模态缺失条件，并保存逐图像 TP/FP/FN/TN |
 | `run_robustness_analysis.sh` | 对已完成的 robustness JSONL 做图像级 bootstrap/配对检验，并生成固定规则的失败案例与定性 PNG |
-| `run_interpretability.sh` | 对冻结的 M4 与 L1/M5 生成 Grad-CAM、CAM 对比图和 GT/Pred 原型 t-SNE |
+| `run_interpretability.sh` | 对冻结的 M1/M2/M3/M10/M11 生成含 GT 的 Grad-CAM、`RGB | Slope | GT | model CAM` 对比图、同批 `RGB | Slope | GT | model Prediction` 实例图和全 Test GT 原型 t-SNE |
 | `run_single_channel_ablation.sh` | 独立补充协议 S1–S4：逐个移除 Thermal、Slope、DEM、Grayscale，默认 3 seeds |
 | `run_test_diagnostics.sh` | 对冻结 checkpoint 统一计算 Boundary、逐 tile 分布、前景面积分层和预测熵不确定性 |
 
@@ -104,25 +104,35 @@ outputs_experiments/test_diagnostics/
 
 ## CAM 与原型 t-SNE
 
-`run_interpretability.sh` 使用正式 run 的 `config.json` 与 `best.pth`，不会重新训练，也不会根据 Test 指标选择 checkpoint。默认对 M4 与 L1（论文 M5）seed 41 的公开 Test 执行：
+`run_interpretability.sh` 使用正式 run 的 `config.json` 与 `best.pth`，不会重新训练，也不会根据 Test 指标选择 checkpoint。当前 CAM/预测对比默认使用 M1、M2、M3、M10、M11；L1/M5 只用于筛选 PMDFNet 优势样本，t-SNE 仍使用 M1–M4 与 L1/M5 的全 Test 集合：
 
 ```bash
 DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls \
-  INTERP_IDS=M4,L1 INTERP_SEED=41 INTERP_SPLIT=test \
+  INTERP_OUTPUT_ROOT=outputs_experiments/interpretability_selected_m1_m2_m3_m10_m11 \
+  INTERP_CAM_IDS=M1,M2,M3,M10,M11 \
+  INTERP_TSNE_IDS=M1,M2,M3,M4,L1 \
+  INTERP_SELECTION_TARGET_IDS=L1 INTERP_SELECTION_REFERENCE_IDS=M1,M2,M3,M10,M11 \
+  INTERP_SEED=41 INTERP_SPLIT=test \
   bash scripts/run_interpretability.sh
 ```
 
 输出包括：
 
 ```text
-outputs_experiments/interpretability/
-  cam/{M4,L1}_s41/cam_manifest.json
-  cam/{M4,L1}_s41/cam_meta.csv
-  cam/cam_comparison_s41.png
-  tsne/M4,L1_s41/{tsne_manifest.json,prototypes.csv,tsne_coordinates.csv,tsne_all.png,tsne_gt.png,tsne_pred.png}
+outputs_experiments/interpretability_selected_m1_m2_m3_m10_m11/
+  cam/{M1,M2,M3,M10,M11}_s41/cam_manifest.json
+  cam/{M1,M2,M3,M10,M11}_s41/cam_meta.csv
+  cam/{M1,M2,M3,M10,M11}_s41/samples/rank_*/{rgb,slope,gt,pred,cam_overlay,cam_gray,fp_fn}.png
+  cam/cam_comparison_rgb_slope_gt_s41.png
+  cam/cam_comparison_rgb_slope_gt_s41_n6.png
+  cam/prediction_comparison_rgb_slope_gt_s41.png
+  cam/prediction_comparison_rgb_slope_gt_s41_n6.png
+  tsne/M1,M2,M3,M4,L1_all_test_s41/{tsne_manifest.json,prototypes.csv,tsne_coordinates.csv,tsne_all.png}
 ```
 
-CAM 默认使用前景类的 `gt_mask` 作为 Grad-CAM 目标，样本由固定 `20261018` seed 抽取；t-SNE 每张图像/类别/GT 或 Pred 区域保留一个特征均值原型。两者都是描述性解释工具，不能替代全 Test 指标、bootstrap 或配对检验。CAM 图中红色/黄色表示较高的正激活，FP/FN 图中红色为 FP、蓝色为 FN、灰色为 TP。
+CAM 默认使用前景类的 `gt_mask` 作为 Grad-CAM 目标，样本由固定 `20261018` seed 抽取；t-SNE 对全部 133 张 Test 图像保留 GT 前景/背景特征原型。当前 CAM/预测实例图使用 M1、M2、M3、M10、M11，并以 L1/M5 相对这五个参考模型的逐图像 mIoU 优势筛选 12 张样本；`*_n6.png` 是按优势排序取最高 6 张的论文版，完整 12 张 PNG 仍用于审计。三者都是描述性解释工具，不能替代全 Test 指标、bootstrap 或配对检验。预测对比图的列固定为 `RGB | Slope | GT | 各模型 Prediction`，白色表示前景、黑色表示背景；CAM 对比图的列固定为 `RGB | Slope | GT | 各模型 CAM`，红色/黄色表示较高的正激活；逐模型目录中的 GT、Pred 和 FP/FN 用于审计。
+
+`tools/evaluation/make_prediction_comparison_figure.py` 只读取已经生成的 `rgb.png`、`slope.png`、`gt.png` 和 `pred.png`，因此排版过程不会重新推理，也不会改变优势样本清单。预测图 manifest 与 PNG 保存在同一目录。
 
 ## 单通道移除补充消融
 

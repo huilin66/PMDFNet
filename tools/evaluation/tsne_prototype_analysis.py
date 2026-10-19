@@ -1,10 +1,12 @@
 """Prototype-level t-SNE analysis for frozen PMDFNet checkpoints.
 
 For each selected image and semantic class, this script computes one mean
-feature vector over the GT region and one over the predicted region.  It then
-embeds the resulting prototypes jointly for the requested models.  The output
-keeps GT and Pred sources separate, matching the analysis intent of the MRSN
-prototype script while using PMDFNet's PyTorch model and mapped MMLSv2 data.
+feature vector over the GT region and one over the predicted region.  All
+requested models are embedded jointly so that their coordinates share one
+descriptive reference space.  In addition to joint overview figures, the
+script writes one figure per model.  Each model figure shows the selected
+foreground/background prototype distributions without mixing the points from
+other models into the panel, matching the MRSN paper-style presentation.
 """
 
 from __future__ import annotations
@@ -49,11 +51,13 @@ from tools.evaluation.paper_run_utils import (  # noqa: E402
 
 
 DEFAULT_MODEL_IDS = ("M4", "L1")
+DEFAULT_CLASS_NAMES = {0: "Background", 1: "Foreground"}
+DEFAULT_SOURCES = ("gt",)
 
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract GT/Pred feature prototypes and create comparable t-SNE plots."
+        description="Extract feature prototypes and create joint plus per-model t-SNE plots."
     )
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--model-ids", default="M4,L1")
@@ -64,6 +68,21 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--device", default=os.environ.get("DEVICE", "cuda:0"))
     parser.add_argument("--feature-layer", default="auto", help="Named module or auto decoder-feature selection.")
     parser.add_argument("--class-ids", default="0,1")
+    parser.add_argument(
+        "--ids",
+        default="",
+        help="Comma-separated image filenames; overrides the fixed class-presence selection.",
+    )
+    parser.add_argument(
+        "--sources",
+        default="gt",
+        help="Sources rendered in each figure: comma-separated gt and/or pred. Default: gt.",
+    )
+    parser.add_argument(
+        "--class-names",
+        default="Background,Foreground",
+        help="Comma-separated class labels in class-id order; default is Background,Foreground.",
+    )
     parser.add_argument("--selection-seed", type=int, default=20261018)
     parser.add_argument("--max-images-per-class", type=int, default=80)
     parser.add_argument("--max-prototypes", type=int, default=0, help="Optional total cap after extraction; 0 means all.")
@@ -102,6 +121,14 @@ def resize_for(config_payload: dict, split: str, requested: int) -> int | None:
 def selected_indices(dataset: MappedLabeledDataset, args: argparse.Namespace) -> list[int]:
     """Select the same image IDs for every model without using predictions."""
 
+    if getattr(args, "ids", "").strip():
+        name_to_index = {path.name: index for index, path in enumerate(dataset.image_files)}
+        names = [item.strip() for item in args.ids.split(",") if item.strip()]
+        missing = [name for name in names if name not in name_to_index]
+        if missing:
+            raise FileNotFoundError(f"Requested image IDs are missing from {dataset.split}: {missing}")
+        return [name_to_index[name] for name in names]
+
     if args.max_images_per_class <= 0:
         return list(range(len(dataset)))
     class_candidates: dict[int, list[int]] = {class_id: [] for class_id in args.class_ids}
@@ -118,6 +145,25 @@ def selected_indices(dataset: MappedLabeledDataset, args: argparse.Namespace) ->
         rng.shuffle(candidates)
         selected.update(candidates[: args.max_images_per_class])
     return sorted(selected)
+
+
+def parse_sources(value: str) -> list[str]:
+    sources = [item.strip().lower() for item in value.split(",") if item.strip()]
+    invalid = sorted(set(sources) - {"gt", "pred"})
+    if invalid:
+        raise ValueError(f"--sources contains unsupported values: {invalid}; use gt and/or pred")
+    return list(dict.fromkeys(sources)) or list(DEFAULT_SOURCES)
+
+
+def parse_class_names(value: str, class_ids: list[int]) -> dict[int, str]:
+    names = [item.strip() for item in value.split(",")]
+    result = dict(DEFAULT_CLASS_NAMES)
+    for class_id, name in enumerate(names):
+        if name:
+            result[class_id] = name
+    for class_id in class_ids:
+        result.setdefault(class_id, f"class {class_id}")
+    return result
 
 
 def model_prototypes(
@@ -144,9 +190,11 @@ def model_prototypes(
                     raise RuntimeError(f"Feature hook did not capture activation at {layer_name}")
                 feature = as_feature_tensor(hook.activation)[0].float()
                 for source_name, mask in (("gt", target.to(device)), ("pred", prediction)):
-                    feature_mask = resize_mask(mask, tuple(feature.shape[-2:]))
                     for class_id in class_ids:
-                        class_mask = feature_mask & (resize_mask(mask == class_id, tuple(feature.shape[-2:])))
+                        # Resize the class-specific mask directly.  Using a
+                        # resized foreground mask as an additional gate would
+                        # silently remove every background prototype.
+                        class_mask = resize_mask(mask == class_id, tuple(feature.shape[-2:]))
                         pixel_count = int(class_mask.sum().item())
                         if pixel_count == 0:
                             continue
@@ -214,6 +262,8 @@ def embed_and_plot(
     perplexity: float,
     iterations: int,
     seed: int,
+    sources: list[str],
+    class_names: dict[int, str],
 ) -> dict:
     import matplotlib.pyplot as plt
 
@@ -240,28 +290,71 @@ def embed_and_plot(
         record["y"] = float(point[1])
 
     model_ids = list(dict.fromkeys(record["model_id"] for record in records))
-    marker_by_model = {model_id: marker for model_id, marker in zip(model_ids, ("o", "^", "s", "D", "P", "X"))}
-    colors = {0: "#1f77b4", 1: "#d62728"}
+    marker_by_model = {
+        model_id: marker
+        for model_id, marker in zip(model_ids, ("o", "^", "s", "D", "P", "X", "v", "<", ">"))
+    }
+    marker_by_source = {"gt": "o", "pred": "^"}
+    colors = {
+        0: "#4c78a8",
+        1: "#e45756",
+        2: "#54a24b",
+        3: "#f2cf5b",
+    }
 
-    def plot(source_filter: str | None, path: Path, title: str) -> None:
-        selected = [record for record in records if source_filter is None or record["source"] == source_filter]
+    def plot(
+        path: Path,
+        title: str,
+        model_filter: str | None = None,
+        source_filter: str | None = None,
+        include_model_legend: bool = False,
+    ) -> None:
+        selected = [
+            record
+            for record in records
+            if (model_filter is None or record["model_id"] == model_filter)
+            and (source_filter is None or record["source"] == source_filter)
+            and record["source"] in sources
+        ]
+        if not selected:
+            return
         figure, axis = plt.subplots(figsize=(8.4, 6.4), dpi=220)
-        for model_id in model_ids:
-            for class_id in sorted({int(item["class_id"]) for item in selected}):
-                points = [item for item in selected if item["model_id"] == model_id and int(item["class_id"]) == class_id]
-                if not points:
-                    continue
-                axis.scatter(
-                    [item["x"] for item in points],
-                    [item["y"] for item in points],
-                    s=26,
-                    alpha=0.72,
-                    c=colors.get(class_id, "#2ca02c"),
-                    marker=marker_by_model[model_id],
-                    edgecolors="white",
-                    linewidths=0.25,
-                    label=f"{model_id} / class {class_id}",
-                )
+        selected_models = [
+            model_id for model_id in model_ids if any(item["model_id"] == model_id for item in selected)
+        ]
+        selected_sources = [source for source in sources if any(item["source"] == source for item in selected)]
+        selected_class_ids = sorted({int(item["class_id"]) for item in selected})
+        for model_id in selected_models:
+            for source in selected_sources:
+                for class_id in selected_class_ids:
+                    points = [
+                        item
+                        for item in selected
+                        if item["model_id"] == model_id
+                        and item["source"] == source
+                        and int(item["class_id"]) == class_id
+                    ]
+                    if not points:
+                        continue
+                    class_label = class_names.get(class_id, f"class {class_id}")
+                    source_label = source.upper()
+                    model_label = model_id if include_model_legend else None
+                    label = (
+                        f"{model_label} / {source_label} / {class_label}"
+                        if model_label
+                        else f"{source_label} / {class_label}"
+                    )
+                    axis.scatter(
+                        [item["x"] for item in points],
+                        [item["y"] for item in points],
+                        s=30,
+                        alpha=0.76,
+                        c=colors.get(class_id, "#2ca02c"),
+                        marker=marker_by_source.get(source) or marker_by_model.get(model_id, "o"),
+                        edgecolors="white" if source == "gt" else "#333333",
+                        linewidths=0.35,
+                        label=label,
+                    )
         axis.set_title(title)
         axis.set_xlabel("t-SNE-1")
         axis.set_ylabel("t-SNE-2")
@@ -275,10 +368,46 @@ def embed_and_plot(
         figure.savefig(path, bbox_inches="tight")
         plt.close(figure)
 
-    plot(None, output_dir / "tsne_all.png", "PMDFNet feature prototypes: GT and Pred")
-    plot("gt", output_dir / "tsne_gt.png", "PMDFNet feature prototypes: GT regions")
-    plot("pred", output_dir / "tsne_pred.png", "PMDFNet feature prototypes: predicted regions")
-    return {"perplexity": effective_perplexity, "iterations": iterations, "points": count}
+    output_paths = {"joint": str(output_dir / "tsne_all.png")}
+    plot(
+        output_dir / "tsne_all.png",
+        "PMDFNet feature prototypes: selected models",
+        include_model_legend=True,
+    )
+    for source in ("gt", "pred"):
+        if source not in sources:
+            continue
+        path = output_dir / f"tsne_{source}.png"
+        plot(
+            path,
+            f"PMDFNet feature prototypes: {source.upper()} regions",
+            source_filter=source,
+            include_model_legend=True,
+        )
+        output_paths[source] = str(path)
+
+    per_model_dir = output_dir / "by_model"
+    per_model_dir.mkdir(parents=True, exist_ok=True)
+    per_model_paths = {}
+    for model_id in model_ids:
+        path = per_model_dir / f"{safe_name(model_id)}.png"
+        plot(
+            path,
+            f"{model_id} feature prototypes: foreground/background",
+            model_filter=model_id,
+            include_model_legend=False,
+        )
+        per_model_paths[model_id] = str(path)
+
+    return {
+        "perplexity": effective_perplexity,
+        "iterations": iterations,
+        "points": count,
+        "sources_rendered": sources,
+        "joint_figures": output_paths,
+        "per_model_figures": per_model_paths,
+        "per_model_figure_rule": "one figure per selected model; class colors identify background/foreground and source markers identify GT/Pred",
+    }
 
 
 def main(argv=None) -> int:
@@ -287,6 +416,8 @@ def main(argv=None) -> int:
     class_ids = [int(value.strip()) for value in args.class_ids.split(",") if value.strip()]
     if not class_ids:
         raise ValueError("--class-ids must contain at least one class")
+    sources = parse_sources(args.sources)
+    class_names = parse_class_names(args.class_names, class_ids)
     device = torch.device(args.device if args.device else ("cuda:0" if torch.cuda.is_available() else "cpu"))
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError(f"Requested CUDA device {device} but CUDA is unavailable")
@@ -306,7 +437,15 @@ def main(argv=None) -> int:
             normalization=normalization_for(config_payload, args.split),
             resize_to=resize_for(config_payload, args.split, args.resize),
         )
-        indices = selected_indices(dataset, argparse.Namespace(class_ids=class_ids, max_images_per_class=args.max_images_per_class, selection_seed=args.selection_seed))
+        indices = selected_indices(
+            dataset,
+            argparse.Namespace(
+                class_ids=class_ids,
+                max_images_per_class=args.max_images_per_class,
+                selection_seed=args.selection_seed,
+                ids=args.ids,
+            ),
+        )
         names = {dataset.image_files[index].name for index in indices}
         if selected_names is None:
             selected_names = names
@@ -363,8 +502,19 @@ def main(argv=None) -> int:
                 record_lists[model_id] = [records[index] for index in selected]
 
     aligned, alignment = align_features(feature_lists, args.pca_dim, args.selection_seed)
-    all_features = np.concatenate([aligned[model_id] for model_id in model_ids], axis=0)
-    all_records = [record for model_id in model_ids for record in record_lists[model_id]]
+    plotted_features = []
+    all_records = []
+    for model_id in model_ids:
+        keep = [
+            index
+            for index, record in enumerate(record_lists[model_id])
+            if record["source"] in sources
+        ]
+        if not keep:
+            raise RuntimeError(f"No prototypes for rendered sources {sources} in {model_id}")
+        plotted_features.append(aligned[model_id][keep])
+        all_records.extend(record_lists[model_id][index] for index in keep)
+    all_features = np.concatenate(plotted_features, axis=0)
     tsne_info = embed_and_plot(
         all_features,
         all_records,
@@ -372,6 +522,8 @@ def main(argv=None) -> int:
         args.perplexity,
         args.tsne_iterations,
         args.selection_seed,
+        sources,
+        class_names,
     )
 
     np.savez_compressed(output_dir / "prototypes_aligned.npz", **{model_id: aligned[model_id] for model_id in model_ids})
@@ -397,11 +549,18 @@ def main(argv=None) -> int:
         "seed": args.seed,
         "device": str(device),
         "class_ids": class_ids,
+        "image_ids": list(
+            dict.fromkeys(record["image"] for record in all_records if record["source"] == sources[0])
+        ),
+        "class_names": {str(class_id): class_names.get(class_id, f"class {class_id}") for class_id in class_ids},
+        "sources_extracted": ["gt", "pred"],
+        "sources_rendered": sources,
         "selection": {
-            "rule": "fixed_seeded_gt_presence_per_class",
+            "rule": "explicit_image_ids" if args.ids.strip() else "fixed_seeded_gt_presence_per_class",
             "selection_seed": args.selection_seed,
             "max_images_per_class": args.max_images_per_class,
             "shared_image_count": len(selected_names),
+            "explicit_ids": [item.strip() for item in args.ids.split(",") if item.strip()],
         },
         "feature_layers": layer_names,
         "models": metadata,
@@ -410,11 +569,11 @@ def main(argv=None) -> int:
         "outputs": {
             "prototypes": str(output_dir / "prototypes.csv"),
             "coordinates": str(output_dir / "tsne_coordinates.csv"),
-            "figure_all": str(output_dir / "tsne_all.png"),
-            "figure_gt": str(output_dir / "tsne_gt.png"),
-            "figure_pred": str(output_dir / "tsne_pred.png"),
+            "figures": tsne_info.get("joint_figures", {}),
+            "per_model_figures": tsne_info.get("per_model_figures", {}),
         },
         "interpretation_note": "t-SNE is descriptive and stochastic; use it to visualize feature organization, not as a standalone significance test.",
+        "figure_note": "The per-model figures are views of one joint embedding, so their axes remain comparable across models. The default rendered source is the GT-defined region, following the MRSN prototype analysis.",
     }
     save_json(output_dir / "tsne_manifest.json", manifest)
     print(json.dumps({"status": "completed", "models": model_ids, "points": len(all_records), "output_dir": str(output_dir)}, ensure_ascii=False))

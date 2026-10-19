@@ -217,6 +217,46 @@ def rgb_preview(image: np.ndarray, output_size: tuple[int, int] | None = None) -
     return image_uint8
 
 
+def single_band_preview(
+    image: np.ndarray,
+    channel_index: int,
+    output_size: tuple[int, int] | None = None,
+) -> np.ndarray:
+    """Create a grayscale preview for one raw input band.
+
+    The preview is only for visualization.  It uses per-tile 2--98 percentile
+    scaling so that the physical slope channel remains visible even when its
+    raw dynamic range differs substantially between tiles.
+    """
+
+    channels = to_chw(image)
+    if channel_index < 0 or channel_index >= channels.shape[0]:
+        raise ValueError(f"Channel index {channel_index} is outside {channels.shape[0]} channels")
+    band = channels[channel_index].astype(np.float32, copy=False)
+    finite = band[np.isfinite(band)]
+    if finite.size == 0:
+        scaled = np.zeros_like(band, dtype=np.float32)
+    else:
+        low, high = np.percentile(finite, [2.0, 98.0])
+        if high <= low:
+            high = low + 1.0
+        scaled = np.clip((band - low) / (high - low), 0.0, 1.0)
+        scaled[~np.isfinite(scaled)] = 0.0
+    band_uint8 = (scaled * 255.0 + 0.5).astype(np.uint8)
+    image_uint8 = np.repeat(band_uint8[..., None], 3, axis=2)
+    if output_size and tuple(image_uint8.shape[:2][::-1]) != tuple(output_size):
+        image_uint8 = np.asarray(
+            Image.fromarray(image_uint8, mode="RGB").resize(output_size, Image.Resampling.BILINEAR)
+        )
+    return image_uint8
+
+
+def slope_preview(image: np.ndarray, output_size: tuple[int, int] | None = None) -> np.ndarray:
+    """Create the standardized grayscale preview of the MMLSv2 Slope band."""
+
+    return single_band_preview(image, channel_index=1, output_size=output_size)
+
+
 def binary_preview(mask: np.ndarray, output_size: tuple[int, int] | None = None) -> np.ndarray:
     mask = np.asarray(mask) > 0
     image = np.zeros((*mask.shape, 3), dtype=np.uint8)

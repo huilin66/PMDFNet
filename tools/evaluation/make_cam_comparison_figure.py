@@ -20,10 +20,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.evaluation.interpretability_common import safe_name, save_json  # noqa: E402
+REQUIRED_FILES = ("rgb.png", "slope.png", "gt.png", "cam_overlay.png")
 
 
-REQUIRED_FILES = ("rgb.png", "gt.png", "pred.png", "cam_overlay.png", "fp_fn.png")
+def save_json(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -36,7 +37,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("--sample-ids", default="", help="Comma-separated image filenames; default is the common manifest intersection.")
     parser.add_argument("--max-samples", type=int, default=8)
-    parser.add_argument("--output", default="outputs_experiments/interpretability/cam/cam_comparison.png")
+    parser.add_argument(
+        "--output",
+        default="outputs_experiments/interpretability/cam/cam_comparison_rgb_slope.png",
+    )
     parser.add_argument("--scale", type=int, default=2)
     return parser.parse_args(argv)
 
@@ -100,12 +104,38 @@ def labeled_image(path: Path, label: str, scale: int) -> Image.Image:
     image = Image.open(path).convert("RGB")
     if scale != 1:
         image = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
-    label_height = max(24, 13 * scale)
+    label_height = max(24, 13 * scale * (str(label).count("\n") + 1))
     canvas = Image.new("RGB", (image.width, image.height + label_height), "white")
     canvas.paste(image, (0, label_height))
     draw = ImageDraw.Draw(canvas)
     draw.text((4, 4), label, fill="black", font=ImageFont.load_default())
     return canvas
+
+
+def cam_target_label(sample_dir: Path, manifest: dict) -> str:
+    """Return a readable per-sample CAM class label for the comparison header."""
+
+    metadata_path = sample_dir / "metadata.json"
+    metadata = {}
+    if metadata_path.is_file():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    role = metadata.get("cam_role")
+    class_id = metadata.get("cam_class")
+    if role:
+        return str(role).capitalize()
+    if class_id is None:
+        class_id = manifest.get("cam_class")
+    if class_id is None or class_id == "per_sample":
+        return "CAM"
+    try:
+        class_id = int(class_id)
+    except (TypeError, ValueError):
+        return f"class {class_id}"
+    if class_id == int(manifest.get("foreground_class_id", 1)):
+        return "Foreground"
+    if class_id == int(manifest.get("background_class_id", 0)):
+        return "Background"
+    return f"class {class_id}"
 
 
 def main(argv=None) -> int:
@@ -129,20 +159,18 @@ def main(argv=None) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model_ids = list(model_dirs)
     rows = []
+    target_classes = {model_id: {} for model_id in model_ids}
     for image_name in images:
         columns = [
             labeled_image(maps[model_ids[0]][image_name] / "rgb.png", "RGB", args.scale),
+            labeled_image(maps[model_ids[0]][image_name] / "slope.png", "Slope", args.scale),
             labeled_image(maps[model_ids[0]][image_name] / "gt.png", "GT", args.scale),
         ]
         for model_id in model_ids:
             sample_dir = maps[model_id][image_name]
-            columns.extend(
-                [
-                    labeled_image(sample_dir / "pred.png", f"{model_id} Pred", args.scale),
-                    labeled_image(sample_dir / "cam_overlay.png", f"{model_id} CAM", args.scale),
-                    labeled_image(sample_dir / "fp_fn.png", f"{model_id} FP/FN", args.scale),
-                ]
-            )
+            target_label = cam_target_label(sample_dir, manifests[model_id])
+            target_classes[model_id][image_name] = target_label
+            columns.append(labeled_image(sample_dir / "cam_overlay.png", f"{model_id} CAM", args.scale))
         row_width = sum(item.width for item in columns)
         row_height = max(item.height for item in columns)
         row_image = Image.new("RGB", (row_width, row_height), "white")
@@ -157,7 +185,7 @@ def main(argv=None) -> int:
     sheet_height = title_height + sum(row.height for row in rows)
     sheet = Image.new("RGB", (sheet_width, sheet_height), "white")
     draw = ImageDraw.Draw(sheet)
-    title = f"CAM comparison | models: {', '.join(model_ids)} | samples: {len(images)}"
+    title = f"CAM comparison | RGB | Slope | GT | {', '.join(model_ids)} CAM | samples: {len(images)}"
     draw.text((4, 8), title, fill="black", font=ImageFont.load_default())
     y = title_height
     for row in rows:
@@ -172,9 +200,14 @@ def main(argv=None) -> int:
         "models": model_ids,
         "samples": images,
         "source_manifests": {model_id: str(model_dirs[model_id] / "cam_manifest.json") for model_id in model_ids},
+        "target_classes": target_classes,
         "output": str(output_path),
-        "columns": ["RGB", "GT"] + [item for model_id in model_ids for item in (f"{model_id} Pred", f"{model_id} CAM", f"{model_id} FP/FN")],
-        "legend": {"FP/FN": "red=false positive, blue=false negative, gray=true positive"},
+        "columns": ["RGB", "Slope", "GT"] + [f"{model_id} CAM" for model_id in model_ids],
+        "legend": {
+            "slope": "per-tile 2--98 percentile-scaled MMLSv2 Slope band",
+            "gt": "ground-truth binary segmentation mask; white=foreground and black=background",
+            "cam_overlay": "RGB preview blended with the model-specific Grad-CAM heatmap",
+        },
     }
     save_json(output_path.with_name(output_path.stem + "_manifest.json"), manifest)
     print(json.dumps({"status": "completed", "samples": len(images), "output": str(output_path)}, ensure_ascii=False))
