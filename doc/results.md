@@ -194,9 +194,9 @@ A5 是近似容量对照，不是严格参数量匹配；Params/GFLOPs/延迟/FP
 
 M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中的自动元数据导入提示失败，但已通过独立模块探针确认，Params/GFLOPs/速度/显存数值不受影响。原始机器可复核文件为 `outputs_experiments/complexity/complexity_results.json` 和 `.csv`。
 
-## 9. E5 受控扰动、配对统计与定性分析
+## 9. E5/E7 补充实验结果索引
 
-这些补充实验不直接并入主结果表；正文只保留实验范围、完成状态和结果索引，详细数值与图像保存在以下文件中。
+这些补充实验不直接并入 57-run 正式主结果表；本节给出可用于补充表的跨 seed 汇总，逐 tile 原始数值、分层明细和图像保存在本项目的 `outputs_experiments/` 归档中。
 
 | 补充实验 | 状态 | 简介与结果路径 |
 |---|---|---|
@@ -207,8 +207,75 @@ M11 在当前 A100 环境实际使用 `gated_conv_simulator`；测量脚本中�
 | CAM 分析 | 已完成 | A100 上使用 M4 与 L1/M5、seed 41、公开 Test 固定抽取的 12 张图，前景类 `class_id=1`、`gt_mask` 目标和自动 decoder feature layer；逐模型 CAM、RGB/GT/Pred/FP-FN 与 metadata 见 [`M4_s41`](../outputs_experiments/interpretability/cam/M4_s41/) / [`L1_s41`](../outputs_experiments/interpretability/cam/L1_s41/)。 |
 | CAM 对比图 | 已完成 | 将两模型同一批样本排版为 `RGB | GT | Pred | CAM | FP/FN` 对比图；见 [`cam_comparison_s41.png`](../outputs_experiments/interpretability/cam/cam_comparison_s41.png) 和 [`cam_comparison_s41_manifest.json`](../outputs_experiments/interpretability/cam/cam_comparison_s41_manifest.json)。 |
 | GT/Pred 特征原型 t-SNE | 已完成 | 共 448 个区域原型；M4/L1 decoder 特征均为 256 维，经各模型 PCA 对齐到 32 维后联合 t-SNE；图和坐标见 [`tsne/M4,L1_s41`](../outputs_experiments/interpretability/tsne/M4,L1_s41/)，包括 `tsne_all.png`、`tsne_gt.png`、`tsne_pred.png`、`prototypes.csv` 和 `tsne_coordinates.csv`。 |
+| 单通道移除训练消融 | 已完成 | 在 A100-1 按独立协议完成 S1–S4 × seed 41/42/43 共 12 个 run；S1/S2/S3/S4 分别移除 Thermal/Slope/DEM/Grayscale。本地归档见 [`summary.csv`](../outputs_experiments/pmdfnet_mmlsv2_single_channel/summary.csv) 和 [`launcher.log`](../outputs_experiments/pmdfnet_mmlsv2_single_channel/launcher.log)；远程原始目录为 `/data/huilin/projects/PMDFNet/outputs_experiments/pmdfnet_mmlsv2_single_channel/`。 |
+| Boundary、逐 tile、面积分层与不确定性（M4/L1） | 已完成 | 使用冻结 M4/L1 checkpoint、3 个 seed 和公开 Test 完成 6 个诊断 run；固定 2 像素 Boundary 容差、3 组等数量面积分层和自然对数熵。本地汇总见 [`diagnostics_summary.csv`](../outputs_experiments/test_diagnostics/diagnostics_summary.csv)，逐 tile/分层数据和 PNG 也已归档；远程原始目录为 `/data/huilin/projects/PMDFNet/outputs_experiments/test_diagnostics/`。 |
+| Boundary、逐 tile、面积分层与不确定性（S1–S4） | 已完成 | 使用同一协议对 12 个单通道冻结 checkpoint 完成 Test 诊断。本地汇总见 [`diagnostics_summary.csv`](../outputs_experiments/test_diagnostics_single_channel/diagnostics_summary.csv)，逐 tile/分层数据和 PNG 也已归档；远程原始目录为 `/data/huilin/projects/PMDFNet/outputs_experiments/test_diagnostics_single_channel/`。 |
 
 执行入口：[`run_robustness_eval.sh`](../scripts/run_robustness_eval.sh)、[`run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh) 和 [`run_interpretability.sh`](../scripts/run_interpretability.sh)。固定扰动协议：[`mmlsv2_robustness_protocol.json`](../configs/mmlsv2_robustness_protocol.json)；解释性分析规则见实验计划 E7.1。
+
+单通道与 Test 诊断执行入口：[`run_single_channel_ablation.sh`](../scripts/run_single_channel_ablation.sh) 和 [`run_test_diagnostics.sh`](../scripts/run_test_diagnostics.sh)。本轮 A100-1 执行未发现 `ERROR` 或 `Traceback`；这些补充结果不改变 57-run 正式主矩阵。
+
+本地归档只复制结果和复现元数据，不复制约 27 GB 的 12 个单通道 `.pth` checkpoint；checkpoint 仍保留在上面列出的 A100 原始目录中。单通道训练的 `summary.csv`、`config.json`、`command.txt`、`git.json`、`runtime.json`、`reproducibility.json`、`metrics.csv` 和训练日志均已复制。
+
+### 9.1 Test 总体汇总表
+
+下表为公开 Test 的 133 个 tile，数值为 seed 41/42/43 的均值 `+/-` 总体标准差。M4 和 L1 是正式结果参照；S1–S4 是单通道移除补充消融。Boundary 使用 2 像素匹配容差；Entropy-error `r` 为逐 tile 平均预测熵与 tile 错误率的 Pearson 相关，仅作描述性结果。
+
+| Model | Removed band | mIoU | IoU_FG | F1 | Boundary F1 | Boundary IoU | Entropy-error r |
+|---|---|---:|---:|---:|---:|---:|---:|
+| M4 | - | 0.8470 +/- 0.0082 | 0.7998 +/- 0.0108 | 0.8887 +/- 0.0066 | 0.6321 +/- 0.0153 | 0.3965 +/- 0.0121 | -0.5932 +/- 0.0080 |
+| L1 | - | 0.8594 +/- 0.0028 | 0.8166 +/- 0.0034 | 0.8990 +/- 0.0020 | 0.6366 +/- 0.0015 | 0.4033 +/- 0.0024 | -0.5272 +/- 0.0178 |
+| S1 | Thermal | 0.8294 +/- 0.0032 | 0.7761 +/- 0.0033 | 0.8739 +/- 0.0021 | 0.5765 +/- 0.0188 | 0.3523 +/- 0.0140 | -0.3562 +/- 0.0675 |
+| S2 | Slope | 0.8518 +/- 0.0046 | 0.8057 +/- 0.0064 | 0.8924 +/- 0.0039 | 0.6316 +/- 0.0078 | 0.3959 +/- 0.0081 | -0.5269 +/- 0.0424 |
+| S3 | DEM | 0.8353 +/- 0.0153 | 0.7855 +/- 0.0196 | 0.8797 +/- 0.0123 | 0.5988 +/- 0.0329 | 0.3710 +/- 0.0275 | -0.4008 +/- 0.0915 |
+| S4 | Grayscale | 0.8434 +/- 0.0100 | 0.7969 +/- 0.0123 | 0.8869 +/- 0.0077 | 0.6089 +/- 0.0216 | 0.3772 +/- 0.0179 | -0.5066 +/- 0.0814 |
+
+### 9.2 前景面积分层汇总表
+
+面积分层按 GT 前景比例排序并固定等数量切分，small/medium/large 分别为 45/44/44 个 tile；下表同样为三个 seed 的均值 `+/-` 总体标准差。完整字段见本地 [`foreground_area_stratified.csv`](../outputs_experiments/test_diagnostics/foreground_area_stratified.csv) 和 [`foreground_area_stratified.csv`](../outputs_experiments/test_diagnostics_single_channel/foreground_area_stratified.csv)。
+
+| Model | Area group | n | mIoU | IoU_FG | F1 | Boundary F1 |
+|---|---|---:|---:|---:|---:|---:|
+| M4 | small | 45 | 0.7244 +/- 0.0073 | 0.5078 +/- 0.0133 | 0.6734 +/- 0.0116 | 0.6064 +/- 0.0203 |
+| M4 | medium | 44 | 0.8144 +/- 0.0088 | 0.7424 +/- 0.0117 | 0.8521 +/- 0.0077 | 0.6460 +/- 0.0149 |
+| M4 | large | 44 | 0.8377 +/- 0.0128 | 0.8780 +/- 0.0107 | 0.9350 +/- 0.0060 | 0.6329 +/- 0.0169 |
+| L1 | small | 45 | 0.7435 +/- 0.0104 | 0.5440 +/- 0.0159 | 0.7046 +/- 0.0133 | 0.6051 +/- 0.0097 |
+| L1 | medium | 44 | 0.8341 +/- 0.0005 | 0.7703 +/- 0.0014 | 0.8703 +/- 0.0009 | 0.6584 +/- 0.0036 |
+| L1 | large | 44 | 0.8508 +/- 0.0009 | 0.8881 +/- 0.0003 | 0.9407 +/- 0.0002 | 0.6339 +/- 0.0023 |
+| S1 | small | 45 | 0.7016 +/- 0.0132 | 0.4708 +/- 0.0214 | 0.6399 +/- 0.0197 | 0.5413 +/- 0.0265 |
+| S1 | medium | 44 | 0.7985 +/- 0.0036 | 0.7200 +/- 0.0036 | 0.8372 +/- 0.0025 | 0.5869 +/- 0.0269 |
+| S1 | large | 44 | 0.8204 +/- 0.0032 | 0.8605 +/- 0.0035 | 0.9250 +/- 0.0020 | 0.5856 +/- 0.0090 |
+| S2 | small | 45 | 0.7466 +/- 0.0103 | 0.5475 +/- 0.0181 | 0.7074 +/- 0.0150 | 0.6180 +/- 0.0104 |
+| S2 | medium | 44 | 0.8150 +/- 0.0037 | 0.7429 +/- 0.0059 | 0.8525 +/- 0.0039 | 0.6471 +/- 0.0073 |
+| S2 | large | 44 | 0.8434 +/- 0.0078 | 0.8810 +/- 0.0069 | 0.9367 +/- 0.0039 | 0.6253 +/- 0.0154 |
+| S3 | small | 45 | 0.7138 +/- 0.0233 | 0.4907 +/- 0.0396 | 0.6574 +/- 0.0351 | 0.5729 +/- 0.0332 |
+| S3 | medium | 44 | 0.8045 +/- 0.0138 | 0.7314 +/- 0.0189 | 0.8448 +/- 0.0125 | 0.6125 +/- 0.0322 |
+| S3 | large | 44 | 0.8218 +/- 0.0185 | 0.8647 +/- 0.0153 | 0.9274 +/- 0.0088 | 0.5995 +/- 0.0336 |
+| S4 | small | 45 | 0.7133 +/- 0.0145 | 0.4889 +/- 0.0265 | 0.6563 +/- 0.0241 | 0.5746 +/- 0.0282 |
+| S4 | medium | 44 | 0.8098 +/- 0.0152 | 0.7406 +/- 0.0197 | 0.8508 +/- 0.0131 | 0.6157 +/- 0.0192 |
+| S4 | large | 44 | 0.8371 +/- 0.0120 | 0.8790 +/- 0.0078 | 0.9356 +/- 0.0044 | 0.6202 +/- 0.0230 |
+
+### 9.3 逐 tile 与不确定性汇总表
+
+逐 tile 分布的均值和标准差由 133 个 Test tile 计算，再对三个 seed 汇总；完整 TP/FP/FN/TN、每 tile 指标和图形见本地 [`per_tile.csv`](../outputs_experiments/test_diagnostics/per_tile.csv)、[`per_tile_distributions.csv`](../outputs_experiments/test_diagnostics/per_tile_distributions.csv) 以及单通道目录中的对应文件。
+
+| Model | Mean entropy (nats) | Error-pixel entropy (nats) | Entropy-error r |
+|---|---:|---:|---:|
+| M4 | 0.0971 +/- 0.0095 | 0.4598 +/- 0.0163 | -0.5932 +/- 0.0080 |
+| L1 | 0.0846 +/- 0.0073 | 0.4383 +/- 0.0119 | -0.5272 +/- 0.0178 |
+| S1 | 0.1307 +/- 0.0182 | 0.4845 +/- 0.0202 | -0.3562 +/- 0.0675 |
+| S2 | 0.0903 +/- 0.0032 | 0.4470 +/- 0.0063 | -0.5269 +/- 0.0424 |
+| S3 | 0.1322 +/- 0.0543 | 0.4754 +/- 0.0507 | -0.4008 +/- 0.0915 |
+| S4 | 0.1111 +/- 0.0327 | 0.4686 +/- 0.0293 | -0.5066 +/- 0.0814 |
+
+| Model | Tile mIoU mean | Tile mIoU SD | Tile F1 mean | Tile F1 SD |
+|---|---:|---:|---:|---:|
+| M4 | 0.8022 +/- 0.0068 | 0.1725 +/- 0.0037 | 0.7982 +/- 0.0047 | 0.2772 +/- 0.0033 |
+| L1 | 0.8213 +/- 0.0030 | 0.1569 +/- 0.0026 | 0.8273 +/- 0.0033 | 0.2359 +/- 0.0054 |
+| S1 | 0.7853 +/- 0.0026 | 0.1770 +/- 0.0013 | 0.7796 +/- 0.0026 | 0.2816 +/- 0.0045 |
+| S2 | 0.8077 +/- 0.0039 | 0.1700 +/- 0.0033 | 0.8028 +/- 0.0050 | 0.2743 +/- 0.0040 |
+| S3 | 0.7914 +/- 0.0150 | 0.1750 +/- 0.0123 | 0.7866 +/- 0.0191 | 0.2789 +/- 0.0197 |
+| S4 | 0.7987 +/- 0.0145 | 0.1711 +/- 0.0082 | 0.7975 +/- 0.0193 | 0.2703 +/- 0.0189 |
 
 ## 10. 每个 seed 的 Test mIoU
 
@@ -271,6 +338,43 @@ outputs_experiments/pmdfnet_mmlsv2/
     test_metrics.json
 ```
 
+本轮新增结果已复制到本项目：
+
+```text
+outputs_experiments/pmdfnet_mmlsv2_single_channel/
+  summary.csv
+  launcher.log
+  {S1,S2,S3,S4}_..._s{41,42,43}_{timestamp}/
+    config.json
+    command.txt
+    git.json
+    logs/train.log
+    metrics.csv
+    reproducibility.json
+    runtime.json
+
+outputs_experiments/test_diagnostics/
+  diagnostics_manifest.json
+  diagnostics_summary.{json,csv}
+  per_tile.csv
+  foreground_area_stratified.csv
+  per_tile_distributions.csv
+  across_seed_summary.csv
+  plots/*.png
+
+outputs_experiments/test_diagnostics_single_channel/
+  diagnostics_manifest.json
+  diagnostics_summary.{json,csv}
+  per_tile.csv
+  foreground_area_stratified.csv
+  per_tile_distributions.csv
+  across_seed_summary.csv
+  plots/*.png
+```
+
+上述本地单通道目录不包含约 27 GB 的 `.pth` checkpoint；12 个 checkpoint 仍保留在
+`/data/huilin/projects/PMDFNet/outputs_experiments/pmdfnet_mmlsv2_single_channel/`，可按需从远程恢复。
+
 当前核对结果：
 
 - `summary.csv`：57 条 completed 记录；
@@ -287,6 +391,7 @@ outputs_experiments/pmdfnet_mmlsv2/
 - 配对统计和失败案例：[`scripts/run_robustness_analysis.sh`](../scripts/run_robustness_analysis.sh)，实现见 [`tools/evaluation/analyze_robustness.py`](../tools/evaluation/analyze_robustness.py)；
 - 定性图：[`tools/evaluation/render_qualitative_cases.py`](../tools/evaluation/render_qualitative_cases.py)。
 - CAM 与原型 t-SNE：[`scripts/run_interpretability.sh`](../scripts/run_interpretability.sh)，实现见 [`tools/evaluation/cam_analysis.py`](../tools/evaluation/cam_analysis.py)、[`tools/evaluation/tsne_prototype_analysis.py`](../tools/evaluation/tsne_prototype_analysis.py) 和 [`tools/evaluation/make_cam_comparison_figure.py`](../tools/evaluation/make_cam_comparison_figure.py)；结果见 `../outputs_experiments/interpretability/`。
+- 单通道消融：[`scripts/run_single_channel_ablation.sh`](../scripts/run_single_channel_ablation.sh)，远程结果见 `/data/huilin/projects/PMDFNet/outputs_experiments/pmdfnet_mmlsv2_single_channel/`；Test 诊断：[`scripts/run_test_diagnostics.sh`](../scripts/run_test_diagnostics.sh)，远程结果见 `/data/huilin/projects/PMDFNet/outputs_experiments/test_diagnostics/` 和 `/data/huilin/projects/PMDFNet/outputs_experiments/test_diagnostics_single_channel/`。
 
 历史 57 个训练/Test run 的记录使用 Git commit `653b81dc76db4d0774d2126cad98641ca32390a9`，但 `summary.csv` 中 57 个 run 的 `git_dirty` 均为 `true`，因此这些结果仍应视为 dirty 工作树快照。复杂度、E5 鲁棒性、配对统计和定性渲染是在 A100 的同步 commit `f5c3374a00985749d751e17bef4120a2cc43578b` 上执行；本次 CAM/t-SNE 分析是在 clean commit `162d9a23d4031308057ed4654a298154ec08966e` 上执行。投稿或最终归档前仍应在 clean commit 下重新冻结协议并记录完整 hash。
 
