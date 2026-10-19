@@ -22,6 +22,14 @@ if str(REPO_ROOT) not in sys.path:
 
 REQUIRED_FILES = ("rgb.png", "slope.png", "gt.png", "cam_overlay.png")
 
+FONT_CANDIDATES = (
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+)
+
 
 def save_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -100,15 +108,33 @@ def common_images(maps: dict[str, dict[str, Path]]) -> list[str]:
     return sorted(common)
 
 
+def load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load a readable bold font on both the A100 Linux host and Windows."""
+
+    for raw_path in FONT_CANDIDATES:
+        path = Path(raw_path)
+        if path.is_file():
+            try:
+                return ImageFont.truetype(str(path), size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
 def labeled_image(path: Path, label: str, scale: int) -> Image.Image:
     image = Image.open(path).convert("RGB")
     if scale != 1:
         image = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
-    label_height = max(24, 13 * scale * (str(label).count("\n") + 1))
+    font = load_font(max(28, 24 * scale))
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1), "white"))
+    bbox = probe.multiline_textbbox((0, 0), str(label), font=font, spacing=2 * scale)
+    text_height = bbox[3] - bbox[1]
+    padding = max(10, 5 * scale)
+    label_height = max(48, text_height + 2 * padding)
     canvas = Image.new("RGB", (image.width, image.height + label_height), "white")
     canvas.paste(image, (0, label_height))
     draw = ImageDraw.Draw(canvas)
-    draw.text((4, 4), label, fill="black", font=ImageFont.load_default())
+    draw.multiline_text((padding, padding // 2), label, fill="black", font=font, spacing=2 * scale)
     return canvas
 
 
@@ -170,7 +196,7 @@ def main(argv=None) -> int:
             sample_dir = maps[model_id][image_name]
             target_label = cam_target_label(sample_dir, manifests[model_id])
             target_classes[model_id][image_name] = target_label
-            columns.append(labeled_image(sample_dir / "cam_overlay.png", f"{model_id} CAM", args.scale))
+            columns.append(labeled_image(sample_dir / "cam_overlay.png", f"{model_id}\nCAM", args.scale))
         row_width = sum(item.width for item in columns)
         row_height = max(item.height for item in columns)
         row_image = Image.new("RGB", (row_width, row_height), "white")
@@ -180,13 +206,16 @@ def main(argv=None) -> int:
             x += item.width
         rows.append(row_image)
 
-    title_height = 30
+    title_font = load_font(max(28, 20 * args.scale))
+    title_probe = ImageDraw.Draw(Image.new("RGB", (1, 1), "white"))
+    title = f"CAM comparison | RGB | Slope | GT | {', '.join(model_ids)} CAM | samples: {len(images)}"
+    title_bbox = title_probe.textbbox((0, 0), title, font=title_font)
+    title_height = max(64, title_bbox[3] - title_bbox[1] + 2 * max(10, 5 * args.scale))
     sheet_width = max(row.width for row in rows)
     sheet_height = title_height + sum(row.height for row in rows)
     sheet = Image.new("RGB", (sheet_width, sheet_height), "white")
     draw = ImageDraw.Draw(sheet)
-    title = f"CAM comparison | RGB | Slope | GT | {', '.join(model_ids)} CAM | samples: {len(images)}"
-    draw.text((4, 8), title, fill="black", font=ImageFont.load_default())
+    draw.text((max(10, 5 * args.scale), max(8, 4 * args.scale)), title, fill="black", font=title_font)
     y = title_height
     for row in rows:
         sheet.paste(row, (0, y))
