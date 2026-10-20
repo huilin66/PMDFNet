@@ -48,6 +48,7 @@ from tools.evaluation.evaluate_test_metrics import (  # noqa: E402
     LabeledTestDataset,
     build_evaluation_model,
     load_checkpoint,
+    sample_standard_deviation,
 )
 from tools.evaluation.paper_run_utils import (  # noqa: E402
     load_protocol,
@@ -593,7 +594,7 @@ def across_seed_summary(run_summaries: list[dict]) -> list[dict]:
             ),
         ):
             row[f"{label}_mean"] = float(np.mean(values))
-            row[f"{label}_std"] = float(np.std(values, ddof=0))
+            row[f"{label}_std"] = sample_standard_deviation(values)
         rows.append(row)
     return rows
 
@@ -753,7 +754,8 @@ def main(argv=None) -> int:
         "protocol_checks": protocol_checks,
         "aggregation_notes": {
             "global_vs_tile": "Global-pixel metrics pool all Test pixels; paired statistics use one per-tile mIoU per image and are not the same estimand.",
-            "seed_summary": "Mean and population standard deviation across the three training seeds; no seed is selected using Test performance.",
+            "seed_summary": "Mean and sample standard deviation (ddof=1) across the three training seeds; no seed is selected using Test performance.",
+            "within_seed_tile_distribution": "Per-tile distribution standard deviations use population standard deviation (ddof=0) over the complete fixed public Test-tile set.",
             "inference": "G0-G1 is a targeted comparison with a previously evaluated alternative selected from existing results; it is not labelled a fully preregistered confirmatory test.",
         },
         "material_passport": {

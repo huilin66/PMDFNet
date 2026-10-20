@@ -48,6 +48,8 @@ from tools.evaluation.evaluate_test_metrics import (  # noqa: E402
     build_evaluation_model,
     load_checkpoint,
     metrics_from_counts,
+    population_standard_deviation,
+    sample_standard_deviation,
 )
 from tools.evaluation.paper_run_utils import (  # noqa: E402
     load_protocol,
@@ -334,6 +336,12 @@ def assign_area_groups(rows: list[dict], group_count: int) -> dict[str, dict]:
 
 
 def mean_and_std(rows: list[dict], metric: str) -> dict[str, float | None]:
+    """Summarize the complete fixed Test-tile set for one seed.
+
+    The returned SD is a population SD because these are descriptive
+    statistics over all 133 observed public Test tiles for that seed.  Seed-
+    level summaries use ``sample_standard_deviation`` separately.
+    """
     values = np.asarray(
         [float(row[metric]) for row in rows if math.isfinite(float(row[metric]))],
         dtype=np.float64,
@@ -342,11 +350,21 @@ def mean_and_std(rows: list[dict], metric: str) -> dict[str, float | None]:
         return {"mean": None, "std": None, "median": None, "q25": None, "q75": None}
     return {
         "mean": float(values.mean()),
-        "std": float(values.std(ddof=0)),
+        "std": population_standard_deviation(values),
         "median": float(np.median(values)),
         "q25": float(np.percentile(values, 25)),
         "q75": float(np.percentile(values, 75)),
     }
+
+
+def area_plot_model_label(model_id: str, seed: int) -> str:
+    """Return a compact, reader-facing label for the area-stratification plot."""
+    model_name = {
+        "M4": "Single",
+        "L1": "PMDFNet",
+        "M5": "PMDFNet",
+    }.get(model_id, model_id)
+    return f"{model_name} s{seed}"
 
 
 def pooled_metrics(rows: list[dict]) -> dict:
@@ -498,7 +516,7 @@ def across_seed_summaries(run_summaries: list[dict]) -> list[dict]:
             values = [float(item[scope_key][metric_key]) for item in summaries]
             prefix = f"{scope_key}_{metric_key}"
             record[f"{prefix}_mean"] = float(np.mean(values))
-            record[f"{prefix}_std"] = float(np.std(values, ddof=0))
+            record[f"{prefix}_std"] = sample_standard_deviation(values)
         for metric in ("mean_entropy_vs_error_rate", "mean_error_entropy_vs_error_rate"):
             values = [
                 item["uncertainty"][metric]["pearson_r"]
@@ -506,7 +524,9 @@ def across_seed_summaries(run_summaries: list[dict]) -> list[dict]:
                 if item["uncertainty"][metric]["pearson_r"] is not None
             ]
             record[f"uncertainty_{metric}_mean"] = float(np.mean(values)) if values else None
-            record[f"uncertainty_{metric}_std"] = float(np.std(values, ddof=0)) if values else None
+            record[f"uncertainty_{metric}_std"] = (
+                sample_standard_deviation(values) if values else None
+            )
         rows.append(record)
     return rows
 
@@ -520,23 +540,44 @@ def render_plots(output_dir: Path, tile_rows: list[dict], area_rows: list[dict])
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    labels = []
-    data = {metric: [] for metric in ("miou", "iou_fg", "f1", "boundary_f1", "boundary_iou")}
-    for key in sorted({(row["model_id"], row["seed"]) for row in tile_rows}):
-        model_id, seed = key
-        labels.append(f"{model_id}\ns{seed}")
-        selected = [row for row in tile_rows if (row["model_id"], row["seed"]) == key]
+    run_keys = sorted({(row["model_id"], row["seed"]) for row in tile_rows})
+    labels = [area_plot_model_label(model_id, seed) for model_id, seed in run_keys]
+    metric_titles = {
+        "miou": "mIoU",
+        "iou_fg": "FG IoU",
+        "f1": "F1",
+        "boundary_f1": "Boundary F1",
+        "boundary_iou": "Boundary IoU",
+    }
+    data = {metric: [] for metric in metric_titles}
+    for model_id, seed in run_keys:
+        selected = [
+            row for row in tile_rows if (row["model_id"], row["seed"]) == (model_id, seed)
+        ]
         for metric in data:
             data[metric].append(
                 [float(row[metric]) for row in selected if math.isfinite(float(row[metric]))]
             )
-    figure, axes = plt.subplots(1, len(data), figsize=(18, 4.5), sharey=False)
+    figure, axes = plt.subplots(2, 3, figsize=(13, 8), sharey=False)
+    axes = np.asarray(axes).reshape(-1)
+    mean_props = {
+        "marker": "D",
+        "markerfacecolor": "white",
+        "markeredgecolor": "black",
+        "markersize": 4,
+    }
     for axis, (metric, values) in zip(axes, data.items()):
-        axis.boxplot(values, tick_labels=labels, showfliers=False)
-        axis.set_title(metric)
+        axis.boxplot(
+            values,
+            tick_labels=labels,
+            showfliers=False,
+            showmeans=True,
+            meanprops=mean_props,
+        )
+        axis.set_title(metric_titles[metric])
         axis.grid(axis="y", alpha=0.25)
         axis.tick_params(axis="x", rotation=30)
-    figure.suptitle("Per-tile Test distributions")
+    axes[-1].axis("off")
     figure.tight_layout()
     figure.savefig(plots_dir / "per_tile_distributions.png", dpi=220)
     plt.close(figure)
@@ -555,9 +596,16 @@ def render_plots(output_dir: Path, tile_rows: list[dict], area_rows: list[dict])
         means = [float(selected[label]["iou_fg_mean"]) for label in area_labels]
         stds = [float(selected[label]["iou_fg_std"]) for label in area_labels]
         offset = (index - (len(run_labels) - 1) / 2.0) * width
-        axis.bar(x + offset, means, width, yerr=stds, capsize=3, label=f"{key[0]} s{key[1]}")
+        axis.bar(
+            x + offset,
+            means,
+            width,
+            yerr=stds,
+            capsize=3,
+            label=area_plot_model_label(key[0], key[1]),
+        )
     axis.set_xticks(x, area_labels)
-    axis.set_ylabel("Foreground IoU (mean ± tile std)")
+    axis.set_ylabel("Per-tile foreground IoU (mean ± SD)")
     axis.set_title("Foreground-area stratification")
     axis.grid(axis="y", alpha=0.25)
     axis.legend(fontsize=8)
@@ -565,23 +613,98 @@ def render_plots(output_dir: Path, tile_rows: list[dict], area_rows: list[dict])
     figure.savefig(plots_dir / "foreground_area_stratification.png", dpi=220)
     plt.close(figure)
 
-    figure, axis = plt.subplots(figsize=(8, 5.5))
-    for key in run_labels:
-        selected = [row for row in tile_rows if (row["model_id"], row["seed"]) == key]
-        x_values = np.asarray(
-            [float(row["error_rate"]) for row in selected if math.isfinite(float(row["mean_error_entropy"]))],
-            dtype=np.float64,
+    model_names = {"L1": "PMDFNet", "M5": "PMDFNet", "M4": "Single-stream"}
+    model_colors = {"L1": "#2C7FB8", "M5": "#2C7FB8", "M4": "#E67E22"}
+    seed_alphas = {41: 0.38, 42: 0.62, 43: 0.90}
+    available_models = {row["model_id"] for row in tile_rows}
+    model_order = [
+        model_id for model_id in ("L1", "M5", "M4") if model_id in available_models
+    ]
+    model_order.extend(sorted(available_models - set(model_order)))
+    plot_data = {}
+    all_x = []
+    all_y = []
+    for model_id in model_order:
+        seed_keys = sorted(
+            {row["seed"] for row in tile_rows if row["model_id"] == model_id}
         )
-        y_values = np.asarray(
-            [float(row["mean_error_entropy"]) for row in selected if math.isfinite(float(row["mean_error_entropy"]))],
-            dtype=np.float64,
+        for seed in seed_keys:
+            selected = [
+                row
+                for row in tile_rows
+                if row["model_id"] == model_id and row["seed"] == seed
+            ]
+            valid = [
+                row
+                for row in selected
+                if math.isfinite(float(row["error_rate"]))
+                and math.isfinite(float(row["mean_error_entropy"]))
+            ]
+            x_values = np.asarray([float(row["error_rate"]) for row in valid], dtype=np.float64)
+            y_values = np.asarray(
+                [float(row["mean_error_entropy"]) for row in valid], dtype=np.float64
+            )
+            plot_data[(model_id, seed)] = (x_values, y_values, selected)
+            all_x.extend(x_values.tolist())
+            all_y.extend(y_values.tolist())
+
+    figure, axes = plt.subplots(1, len(model_order), figsize=(12, 5.5), sharex=True, sharey=True)
+    axes = np.atleast_1d(axes)
+    if all_x and all_y:
+        x_min, x_max = min(all_x), max(all_x)
+        y_min, y_max = min(all_y), max(all_y)
+        x_pad = max((x_max - x_min) * 0.05, 0.002)
+        y_pad = max((y_max - y_min) * 0.05, 0.002)
+        x_limits = (max(0.0, x_min - x_pad), x_max + x_pad)
+        y_limits = (max(0.0, y_min - y_pad), y_max + y_pad)
+    else:
+        x_limits = None
+        y_limits = None
+
+    for panel_index, (axis, model_id) in enumerate(zip(axes, model_order)):
+        correlations = []
+        point_count = 0
+        seeds = sorted({seed for key_model, seed in plot_data if key_model == model_id})
+        for seed in seeds:
+            x_values, y_values, selected = plot_data[(model_id, seed)]
+            point_count += int(x_values.size)
+            axis.scatter(
+                x_values,
+                y_values,
+                color=model_colors.get(model_id, "#4C78A8"),
+                alpha=seed_alphas.get(seed, 0.7),
+                s=22,
+                edgecolors="none",
+                label=f"seed {seed}",
+            )
+            coefficient = correlation(
+                selected, "mean_error_entropy", "error_rate"
+            )["pearson_r"]
+            if coefficient is not None:
+                correlations.append(float(coefficient))
+        mean_correlation = float(np.mean(correlations)) if correlations else float("nan")
+        panel_label = chr(ord("a") + panel_index)
+        axis.set_title(
+            f"({panel_label}) {model_names.get(model_id, model_id)}\n"
+            f"{len(seeds)} seeds · {point_count} points"
         )
-        axis.scatter(x_values, y_values, alpha=0.55, s=22, label=f"{key[0]} s{key[1]}")
-    axis.set_xlabel("Per-tile error rate")
-    axis.set_ylabel("Mean entropy on error pixels (nats)")
-    axis.set_title("Uncertainty versus error rate")
-    axis.grid(alpha=0.25)
-    axis.legend(fontsize=8)
+        axis.text(
+            0.04,
+            0.96,
+            f"Mean r = {mean_correlation:.4f}",
+            transform=axis.transAxes,
+            ha="left",
+            va="top",
+            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+        )
+        axis.set_xlabel("Per-tile error rate")
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize=8, frameon=False)
+        if x_limits is not None and y_limits is not None:
+            axis.set_xlim(*x_limits)
+            axis.set_ylim(*y_limits)
+    if len(axes):
+        axes[0].set_ylabel("Mean entropy on error pixels (nats)")
     figure.tight_layout()
     figure.savefig(plots_dir / "uncertainty_error_scatter.png", dpi=220)
     plt.close(figure)
@@ -768,6 +891,10 @@ def main(argv=None) -> int:
             "entropy": "binary predictive entropy in natural-log nats",
             "error_entropy": "mean entropy over misclassified pixels; tiles without errors are excluded from correlation",
             "correlation": "Pearson correlation between per-tile entropy and per-tile error rate",
+        },
+        "statistical_convention": {
+            "across_seed": "sample standard deviation (ddof=1) over seed-level estimates",
+            "within_seed_tile_distribution": "population standard deviation (ddof=0) over the complete fixed public Test-tile set",
         },
         "outputs": {
             "per_tile": str(output_dir / "per_tile.csv"),
