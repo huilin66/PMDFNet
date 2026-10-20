@@ -61,10 +61,12 @@ DEVICE=cuda:0 COMPLEXITY_SEEDS=41 bash scripts/run_complexity_eval.sh
 ```text
 outputs_experiments/robustness/robustness_results.json
 outputs_experiments/robustness/robustness_results.csv
+outputs_experiments/robustness/robustness_across_seed.csv
 outputs_experiments/robustness/robustness_per_image.jsonl
 ```
 
 JSONL 保存每张 Test 图像的 TP、FP、FN、TN、mIoU、F1、预测前景面积和目标前景面积，因此可以直接做同一图像上的模型配对比较、bootstrap 和 FP/FN 失败案例筛选。
+`robustness_across_seed.csv` 汇总每个模型/条件/强度的均值与跨 seed sample standard deviation；固定 Test tile 内部的分布统计仍使用 population standard deviation。
 
 ```bash
 DATA_ROOT=/data/.../mmlsv2_mapped_mars_ls bash scripts/run_robustness_eval.sh

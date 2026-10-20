@@ -161,6 +161,18 @@ def mean_metric_dict(metric_dicts: list[dict[str, float]]) -> dict[str, float]:
     }
 
 
+def population_standard_deviation(values) -> float:
+    """Return population SD for a complete observed set (ddof=0)."""
+    array = np.asarray(list(values), dtype=np.float64)
+    return float(array.std(ddof=0)) if array.size > 1 else 0.0
+
+
+def sample_standard_deviation(values) -> float:
+    """Return sample SD for seed-level estimates (ddof=1)."""
+    array = np.asarray(list(values), dtype=np.float64)
+    return float(array.std(ddof=1)) if array.size > 1 else 0.0
+
+
 def load_checkpoint(model: torch.nn.Module, checkpoint_path: Path, device: torch.device) -> None:
     checkpoint = torch.load(str(checkpoint_path), map_location=device)
     if isinstance(checkpoint, dict):

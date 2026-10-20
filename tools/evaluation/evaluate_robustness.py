@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from tools.evaluation.evaluate_test_metrics import (  # noqa: E402
     mean_metric_dict,
     metrics_from_counts,
     build_evaluation_model,
+    sample_standard_deviation,
 )
 from tools.evaluation.measure_model_complexity import _as_first_tensor, _m3lsnet_backend  # noqa: E402
 from tools.evaluation.paper_run_utils import (  # noqa: E402
@@ -253,6 +255,43 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def across_seed_summary(summary_records: list[dict]) -> list[dict]:
+    """Aggregate robustness mIoU and auxiliary metrics across training seeds.
+
+    Each row is a fixed model/condition/level evaluated with three seeds.  The
+    mean is descriptive and the reported across-seed SD is the sample SD.
+    """
+    grouped = defaultdict(list)
+    for record in summary_records:
+        if record.get("status") != "completed":
+            continue
+        key = (
+            record["paper_id"],
+            record["condition_id"],
+            record["level_name"],
+            record["level_value"],
+        )
+        grouped[key].append(record)
+
+    rows = []
+    for (paper_id, condition_id, level_name, level_value), records in sorted(grouped.items()):
+        row = {
+            "paper_id": paper_id,
+            "condition_id": condition_id,
+            "level_name": level_name,
+            "level_value": level_value,
+            "n_seeds": len(records),
+            "seeds": ",".join(str(item["seed"]) for item in sorted(records, key=lambda item: item["seed"])),
+        }
+        metric_keys = sorted(records[0]["metrics"])
+        for metric in metric_keys:
+            values = [float(item["metrics"][metric]) for item in records]
+            row[f"{metric}_mean"] = float(np.mean(values))
+            row[f"{metric}_std"] = sample_standard_deviation(values)
+        rows.append(row)
+    return rows
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
     if not args.data_root:
@@ -371,6 +410,11 @@ def main(argv=None) -> int:
         "conditions_including_clean": len(conditions),
         "per_image_metrics": str(per_image_path),
         "records": summary_records,
+        "across_seed_summary": across_seed_summary(summary_records),
+        "statistical_convention": {
+            "across_seed": "sample standard deviation (ddof=1) over seed-level estimates",
+            "per_image": "per-image metrics are retained for paired bootstrap and sign-flip analyses",
+        },
         "material_passport": {
             "verification_status": "EXECUTED",
             "pairing": "same sorted Test image list and deterministic noise realization across models",
@@ -386,6 +430,14 @@ def main(argv=None) -> int:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(summary_records)
+    across_rows = across_seed_summary(summary_records)
+    across_fieldnames = sorted({key for record in across_rows for key in record})
+    with (output_dir / "robustness_across_seed.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
+        writer = csv.DictWriter(handle, fieldnames=across_fieldnames)
+        writer.writeheader()
+        writer.writerows(across_rows)
     failed = [item for item in summary_records if item["status"] != "completed"]
     print(
         f"Wrote {len(summary_records)} condition records and per-image metrics to {output_dir}; "
