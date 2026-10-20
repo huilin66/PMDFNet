@@ -2,8 +2,6 @@
 
 This repository is built based on [M3LSNet](https://github.com/tingul4/M3LSNet), and contains the solution for the **1st Mars Landslide Segmentation (Mars-LS) Challenge**. It implements Dual_Segformer with ConvNext backbonefor the challenges of Martian terrain segmentation.
 
-The complete code has been consolidated in [PMDFNet](https://github.com/huilin66/PMDFNet), while the public challenge solution is available in [DualSegformer](https://github.com/huilin66/DualSegformer).
-
 ## 📂 Repository Structure
 
 ```
